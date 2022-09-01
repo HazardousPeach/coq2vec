@@ -5,7 +5,8 @@ A library for turning the text representation of coq terms into
 fixed-width vectors for use in ML models. Does this by training an
 autoencoder on a corpus of coq terms.
 
-This repo is constructed from code by Abhishek Vargas.
+This repo is constructed from code by Abhishek Varghese.
+
 
 Example Usage
 -------------
