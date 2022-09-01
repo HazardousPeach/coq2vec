@@ -36,12 +36,8 @@ class CoqRNNVectorizer:
         self.symbol_mapping = None
         self.model = None
         pass
-    def load_weights(self, language_symbols_path: Path,
-                     model_path: Path) -> None:
-        self.symbol_mapping = pickle.load(open(str(language_symbols_path), 'rb'))
-        device = "cuda" if use_cuda else "cpu"
-        self.model = maybe_cuda(torch.load(str(model_path), map_location=device))
-        pass
+    def load_weights(self, model_path: Path) -> None:
+        self.symbol_mapping, self.model = torch.load(model_path)
     def save_weights(self):
         raise NotImplementedError()
         pass
