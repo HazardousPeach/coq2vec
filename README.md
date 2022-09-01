@@ -7,6 +7,8 @@ autoencoder on a corpus of coq terms.
 
 This repo is constructed from code by Abhishek Varghese.
 
+In its current state this project is meant to be used with pre-trained
+weights, not provided in repo.
 
 Example Usage
 -------------
