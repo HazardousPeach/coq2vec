@@ -12,6 +12,9 @@ from torch import optim
 from torch import nn
 import torch.nn.modules.loss as loss
 import torch.utils.data as data
+import torch.nn.functional as F
+import torch.optim.lr_scheduler as scheduler
+
 from tqdm import tqdm
 
 class DummyFile:
@@ -61,8 +64,8 @@ class CoqRNNVectorizer:
         pass
     def train(self, terms: List[str],
               hidden_size: int, learning_rate: float, n_epochs: int,
-              batch_size: int, print_every: int,
-              force_max_length: Optional[int] = None) -> None:
+              batch_size: int, print_every: int, gamma: float,
+              force_max_length: Optional[int] = None, epoch_step: int = 1) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
         max_length_so_far = 0
@@ -99,6 +102,9 @@ class CoqRNNVectorizer:
 
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate)
+        adjuster = scheduler.StepLR(optimizer, epoch_step,
+                                    gamma=gamma)
+
         criterion = nn.NLLLoss()
         training_start=time.time()
         print("Training")
@@ -120,6 +126,7 @@ class CoqRNNVectorizer:
                           .format(timeSince(training_start, progress),
                                   items_processed, progress * 100,
                                   epoch_loss / batch_num))
+            adjuster.step()
             self.model = encoder
             self._decoder = decoder
             pass
