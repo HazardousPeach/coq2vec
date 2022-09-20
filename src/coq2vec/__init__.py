@@ -38,22 +38,26 @@ SOS_token = 0
 
 class CoqRNNVectorizer:
     symbol_mapping: Optional[Dict[str, int]]
+    token_vocab: Optional[List[str]]
     model: Optional['EncoderRNN']
     _decoder: Optional['DecoderRNN']
+    max_term_length: Optional[int]
     def __init__(self) -> None:
         self.symbol_mapping = None
+        self.token_vocab = None
         self.model = None
         self._decoder = None
+        self.max_term_length = None
         pass
-        self.symbol_mapping, self.model, self._decoder = torch.load(model_path)
     def load_weights(self, model_path: Union[Path, str]) -> None:
         if isinstance(model_path, str):
             model_path = Path(model_path)
+        self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length = torch.load(model_path)
     def save_weights(self, model_path: Union[Path, str]):
         if isinstance(model_path, str):
             model_path = Path(model_path)
         with model_path.open('wb') as f:
-            torch.save((self.symbol_mapping, self.model, self._decoder), f)
+            torch.save((self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length), f)
         pass
     def train(self, terms: List[str],
               hidden_size: int, learning_rate: float, n_epochs: int,
@@ -67,20 +71,20 @@ class CoqRNNVectorizer:
                 token_set.add(symbol)
             max_length_so_far = max(len(get_symbols(term)), max_length_so_far)
 
-        token_vocab = list(token_set)
+        self.token_vocab = list(token_set)
         self.symbol_mapping = {}
-        for idx, symbol in enumerate(token_vocab):
+        for idx, symbol in enumerate(self.token_vocab):
             self.symbol_mapping[symbol] = idx
         if force_max_length:
-            max_term_length = min(force_max_length, max_length_so_far)
+            self.max_term_length = min(force_max_length, max_length_so_far)
         else:
-            max_term_length = max_length_so_far
+            self.max_term_length = max_length_so_far
 
         term_tensors = maybe_cuda(torch.LongTensor([
             normalize_sentence_length([self.symbol_mapping[symb]
                                        for symb in get_symbols(term)
                                        if symb in self.symbol_mapping],
-                                      max_term_length,
+                                      self.max_term_length,
                                       EOS_token) + [EOS_token]
             for term in tqdm(terms, desc="Tokenizing and normalizing")])
 
@@ -90,8 +94,8 @@ class CoqRNNVectorizer:
         num_batches = int(term_tensors[0].size()[0] / batch_size)
         dataset_size = num_batches * batch_size
 
-        encoder = maybe_cuda(EncoderRNN(len(token_vocab), hidden_size).to(self.device))
-        decoder = maybe_cuda(DecoderRNN(hidden_size, len(token_vocab)).to(self.device))
+        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab), hidden_size).to(self.device))
+        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)).to(self.device))
 
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate)
