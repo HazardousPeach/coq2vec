@@ -73,7 +73,7 @@ class CoqRNNVectorizer:
 
         self.token_vocab = list(token_set)
         self.symbol_mapping = {}
-        for idx, symbol in enumerate(self.token_vocab):
+        for idx, symbol in enumerate(self.token_vocab, start=2):
             self.symbol_mapping[symbol] = idx
         if force_max_length:
             self.max_term_length = min(force_max_length, max_length_so_far)
@@ -94,8 +94,8 @@ class CoqRNNVectorizer:
         num_batches = int(term_tensors[0].size()[0] / batch_size)
         dataset_size = num_batches * batch_size
 
-        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab), hidden_size).to(self.device))
-        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)).to(self.device))
+        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size).to(self.device))
+        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2).to(self.device))
 
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate)
