@@ -91,7 +91,7 @@ class CoqRNNVectorizer:
         data_batches = data.DataLoader(data.TensorDataset(term_tensors),
                                        batch_size=batch_size, num_workers=0,
                                        shuffle=True, pin_memory=True, drop_last=True)
-        num_batches = int(term_tensors[0].size()[0] / batch_size)
+        num_batches = int(term_tensors.size()[0] / batch_size)
         dataset_size = num_batches * batch_size
 
         encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size).to(self.device))
@@ -104,7 +104,7 @@ class CoqRNNVectorizer:
         for epoch in range(n_epochs):
             print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
-            for batch_num, data_batch in enumerate(data_batches, start=1):
+            for batch_num, (data_batch,) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
                 loss = autoencoderBatchLoss(encoder, decoder, data_batch, criterion)
                 loss.backward()
@@ -149,16 +149,16 @@ class EncoderRNN(nn.Module):
 
     def forward(self, input: torch.LongTensor, hidden: torch.FloatTensor,
                 cell: torch.FloatTensor):
-        embedded = self.embedding(input).view(1, 1, -1)
-        output = embedded
-        output, (hidden, cell) = self.lstm(output, (hidden,cell))
+        batch_size = input.size(0)
+        embedded = self.embedding(input).view(1, batch_size, self.hidden_size)
+        output, (hidden, cell) = self.lstm(embedded, (hidden,cell))
         return output, hidden, cell
 
-    def initHidden(self,device):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+    def initHidden(self,batch_size: int, device: str):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
-    def initCell(self,device):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+    def initCell(self,batch_size: int, device: str):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size: int, output_size: int) -> None:
@@ -170,30 +170,32 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden, cell):
-        embedded = self.embedding(input).view(1, 1, -1)
+        batch_size = input.size(0)
+        embedded = self.embedding(input).view(1, batch_size, -1)
         output, (hidden, cell) = self.lstm(F.relu(embedded), (hidden, cell))
         token_dist = self.softmax(self.out(output[0]))
         return token_dist, hidden, cell
 
-    def initHidden(self,device):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+    def initHidden(self,batch_size: int, device: str):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
-    def initCell(self,device):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+    def initCell(self,batch_size: int, device: str):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, criterion: loss._Loss) -> torch.FloatTensor:
-    input_length = data.size(0)
+    batch_size = data.size(0)
+    input_length = data.size(1)
     target_length = input_length
     device = "cuda" if use_cuda else "cpu"
-    encoder_hidden = encoder.initHidden(device)
-    encoder_cell = encoder.initCell(device)
-    decoder_cell = decoder.initCell(device)
+    encoder_hidden = encoder.initHidden(batch_size, device)
+    encoder_cell = encoder.initCell(batch_size, device)
+    decoder_cell = decoder.initCell(batch_size, device)
 
     loss: torch.FloatTensor = torch.FloatTensor([0.])
     for ei in range(input_length):
-        encoder_output,encoder_hidden, encoder_cell = encoder(data[ei], encoder_hidden, encoder_cell)
+        encoder_output,encoder_hidden, encoder_cell = encoder(data[:,ei], encoder_hidden, encoder_cell)
 
-    decoder_input = torch.tensor([[SOS_token]], device=device)
+    decoder_input = torch.tensor([[SOS_token]]*batch_size, device=device)
     decoder_hidden = encoder_hidden
 
     for di in range(target_length):
@@ -201,9 +203,7 @@ def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         topv, topi = decoder_output.topk(1)
         decoder_input = topi.squeeze().detach()
 
-        loss = cast(torch.FloatTensor, loss + cast(torch.FloatTensor, criterion(decoder_output, data[di])))
-        if decoder_input.item() == EOS_token:
-            break
+        loss = cast(torch.FloatTensor, loss + cast(torch.FloatTensor, criterion(decoder_output, data[:,di])))
 
     return loss
 
