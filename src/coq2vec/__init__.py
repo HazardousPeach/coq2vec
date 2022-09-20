@@ -80,7 +80,7 @@ class CoqRNNVectorizer:
         else:
             self.max_term_length = max_length_so_far
 
-        term_tensors = maybe_cuda(torch.LongTensor([
+        term_tensors = torch.LongTensor([
             normalize_sentence_length([self.symbol_mapping[symb]
                                        for symb in get_symbols(term)
                                        if symb in self.symbol_mapping],
@@ -106,7 +106,7 @@ class CoqRNNVectorizer:
             epoch_loss = 0.
             for batch_num, (data_batch,) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
-                loss = autoencoderBatchLoss(encoder, decoder, data_batch, criterion)
+                loss = autoencoderBatchLoss(encoder, decoder, maybe_cuda(data_batch), criterion)
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
@@ -133,8 +133,8 @@ class CoqRNNVectorizer:
         input_length = term_tensor.size(0)
         with torch.no_grad():
             device = "cuda" if use_cuda else "cpu"
-            hidden = self.model.initHidden(device)
-            cell = self.model.initCell(device)
+            hidden = self.model.initHidden(1, device)
+            cell = self.model.initCell(1, device)
             for ei in range(input_length):
                 _, hidden, cell = self.model(term_tensor[ei], hidden, cell)
         return hidden.cpu().detach().numpy().flatten()
@@ -155,10 +155,10 @@ class EncoderRNN(nn.Module):
         return output, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
-        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+        return maybe_cuda(torch.zeros(1, batch_size, self.hidden_size, device=device))
 
     def initCell(self,batch_size: int, device: str):
-        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+        return maybe_cuda(torch.zeros(1, batch_size, self.hidden_size, device=device))
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size: int, output_size: int) -> None:
@@ -191,7 +191,7 @@ def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     encoder_cell = encoder.initCell(batch_size, device)
     decoder_cell = decoder.initCell(batch_size, device)
 
-    loss: torch.FloatTensor = torch.FloatTensor([0.])
+    loss: torch.FloatTensor = maybe_cuda(torch.FloatTensor([0.]))
     for ei in range(input_length):
         encoder_output,encoder_hidden, encoder_cell = encoder(data[:,ei], encoder_hidden, encoder_cell)
 
