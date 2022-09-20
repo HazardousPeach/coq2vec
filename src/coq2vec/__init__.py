@@ -101,6 +101,7 @@ class CoqRNNVectorizer:
                               lr=learning_rate)
         criterion = nn.NLLLoss()
         training_start=time.time()
+        print("Training")
         for epoch in range(n_epochs):
             print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
@@ -124,8 +125,8 @@ class CoqRNNVectorizer:
             pass
         pass
     def term_to_vector(self, term_text: str):
-        assert self.symbol_mapping
-        assert self.model
+        assert self.symbol_mapping, "No loaded weights!"
+        assert self.model, "No loaded weights!"
         term_sentence = get_symbols(term_text)
         term_tensor = maybe_cuda(torch.LongTensor(
             [self.symbol_mapping[symb] for symb in term_sentence
