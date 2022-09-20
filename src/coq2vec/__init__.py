@@ -45,9 +45,13 @@ class CoqRNNVectorizer:
         self.model = None
         self._decoder = None
         pass
-    def load_weights(self, model_path: Path) -> None:
         self.symbol_mapping, self.model, self._decoder = torch.load(model_path)
-    def save_weights(self, model_path: Path):
+    def load_weights(self, model_path: Union[Path, str]) -> None:
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
+    def save_weights(self, model_path: Union[Path, str]):
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
         with model_path.open('wb') as f:
             torch.save((self.symbol_mapping, self.model, self._decoder), f)
         pass
