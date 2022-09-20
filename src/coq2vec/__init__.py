@@ -12,6 +12,7 @@ from torch import optim
 from torch import nn
 import torch.nn.modules.loss as loss
 import torch.utils.data as data
+from tqdm import tqdm
 
 class DummyFile:
     def write(self, x): pass
@@ -57,7 +58,7 @@ class CoqRNNVectorizer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
         max_length_so_far = 0
-        for term in terms:
+        for term in tqdm(terms, desc="Getting symbols"):
             for symbol in get_symbols(term):
                 token_set.add(symbol)
             max_length_so_far = max(len(get_symbols(term)), max_length_so_far)
@@ -77,7 +78,7 @@ class CoqRNNVectorizer:
                                        if symb in self.symbol_mapping],
                                       max_term_length,
                                       EOS_token) + [EOS_token]
-            for term in terms]))
+            for term in tqdm(terms, desc="Tokenizing and normalizing")])
 
         data_batches = data.DataLoader(data.TensorDataset(term_tensors),
                                        batch_size=batch_size, num_workers=0,
