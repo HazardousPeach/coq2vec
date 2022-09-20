@@ -146,6 +146,27 @@ class CoqRNNVectorizer:
             for ei in range(input_length):
                 _, hidden, cell = self.model(term_tensor[ei], hidden, cell)
         return hidden.cpu().detach().numpy().flatten()
+    def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
+        assert self.symbol_mapping, "No loaded weights!"
+        assert self.model, "No loaded weights!"
+        assert term_vec.size() == torch.Size([self.model.hidden_size]), "Wrong dimensions for input"
+        device = "cuda" if use_cuda else "cpu"
+        self._decoder.to(device)
+        output = ""
+        with torch.no_grad():
+            decoder_hidden = term_vec.to(device).view(1, 1, -1)
+            decoder_input = torch.tensor([[SOS_token]], device=device)
+            decoder_cell = self._decoder.initCell(1, device)
+            for di in range(self.max_term_length):
+                decoder_output, decoder_hidden, decoder_cell = self._decoder(decoder_input, decoder_hidden, decoder_cell)
+                topv, topi = decoder_output.topk(1)
+                next_char = topi.squeeze().detach()
+                if next_char == EOS_token:
+                    break
+                decoder_input = next_char.view(1, 1)
+                output += " " + self.token_vocab[decoder_input - 2]
+        return output
+
 
 class EncoderRNN(nn.Module):
     def __init__(self, input_size: int, hidden_size: int) -> None:
