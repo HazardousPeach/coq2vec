@@ -1,4 +1,5 @@
-from typing import List, TypeVar, Dict, Optional, Union, overload, cast, Set
+from typing import (List, TypeVar, Dict, Optional, Union,
+                    overload, cast, Set, NamedTuple)
 import re
 import sys
 import contextlib
@@ -173,7 +174,7 @@ class CoqTermRNNVectorizer:
             self._decoder = decoder
             pass
         pass
-    def term_to_vector(self, term_text: str):
+    def term_to_vector(self, term_text: str) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
         term_sentence = get_symbols(term_text)
@@ -191,6 +192,9 @@ class CoqTermRNNVectorizer:
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
+        assert self._decoder
+        assert self.max_term_length
+        assert self.token_vocab
         assert term_vec.size() == torch.Size([self.model.hidden_size]), "Wrong dimensions for input"
         device = "cuda" if use_cuda else "cpu"
         self._decoder.to(device)
@@ -290,13 +294,14 @@ def get_symbols(string: str) -> List[str]:
         r' \1 ', string).split()
             if word.strip() != '']
 
-T = TypeVar('T', bound=nn.Module)
+T1 = TypeVar('T1', bound=nn.Module)
+T2 = TypeVar('T2', bound=torch.Tensor)
 @overload
-def maybe_cuda(component: T) -> T:
+def maybe_cuda(component: T1) -> T1:
     ...
 
 @overload
-def maybe_cuda(component: torch.Tensor) -> torch.Tensor:
+def maybe_cuda(component: T2) -> T2:
     ...
 
 def maybe_cuda(component):
