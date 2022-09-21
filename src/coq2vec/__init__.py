@@ -66,7 +66,8 @@ class CoqRNNVectorizer:
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
               force_max_length: Optional[int] = None, epoch_step: int = 1,
-              num_layers=1) -> None:
+              num_layers: int = 1, allow_non_cuda: bool = False) -> None:
+        assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
         max_length_so_far = 0
