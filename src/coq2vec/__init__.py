@@ -39,7 +39,7 @@ cuda_device = "cuda:0"
 EOS_token = 1
 SOS_token = 0
 
-class CoqRNNVectorizer:
+class CoqTermRNNVectorizer:
     symbol_mapping: Optional[Dict[str, int]]
     token_vocab: Optional[List[str]]
     model: Optional['EncoderRNN']
