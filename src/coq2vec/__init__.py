@@ -174,8 +174,9 @@ class EncoderRNN(nn.Module):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(input_size, hidden_size, num_layers=num_layers)
+        self.embedding = nn.Embedding(input_size, hidden_size)
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
+        self.num_layers = num_layers
 
     def forward(self, input: torch.LongTensor, hidden: torch.FloatTensor,
                 cell: torch.FloatTensor):
@@ -185,19 +186,20 @@ class EncoderRNN(nn.Module):
         return output, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
-        return maybe_cuda(torch.zeros(1, batch_size, self.hidden_size, device=device))
+        return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
 
     def initCell(self,batch_size: int, device: str):
-        return maybe_cuda(torch.zeros(1, batch_size, self.hidden_size, device=device))
+        return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size: int, output_size: int, num_layers: int = 1) -> None:
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(output_size, hidden_size, num_layers=num_layers)
+        self.embedding = nn.Embedding(output_size, hidden_size)
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
+        self.num_layers = num_layers
 
     def forward(self, input, hidden, cell):
         batch_size = input.size(0)
@@ -207,10 +209,10 @@ class DecoderRNN(nn.Module):
         return token_dist, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
-        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
     def initCell(self,batch_size: int, device: str):
-        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
 def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, criterion: loss._Loss) -> torch.FloatTensor:
     batch_size = data.size(0)
