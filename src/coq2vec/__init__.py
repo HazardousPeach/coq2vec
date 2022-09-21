@@ -17,6 +17,16 @@ import torch.optim.lr_scheduler as scheduler
 
 from tqdm import tqdm
 
+class Obligation(NamedTuple):
+    hypotheses: List[str]
+    goal: str
+
+class ProofContext(NamedTuple):
+    fg_goals: List[Obligation]
+    bg_goals: List[Obligation]
+    shelved_goals: List[Obligation]
+    given_up_goals: List[Obligation]
+
 class DummyFile:
     def write(self, x): pass
     def flush(self): pass
@@ -38,6 +48,36 @@ with silent():
 cuda_device = "cuda:0"
 EOS_token = 1
 SOS_token = 0
+
+class CoqContextVectorizer:
+    term_vectorizer: Optional['CoqTermRNNVectorizer']
+    hypotheses_encoder: Optional['EncoderRNN']
+    hypotheses_decoder: Optional['DecoderRNN']
+    max_num_hypotheses: Optional[int]
+
+    def __init__(self) -> None:
+        self.term_encoder = None
+        self.hypotheses_encoder = None
+        self.hypotheses_decoder = None
+        self.max_num_hypotheses = None
+    def load_weights(self, model_path: Union[Path, str]) -> None:
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
+        with model_path.open('rb') as f:
+            self.term_encoder, self.hypotheses_encoder,\
+                self.hypotheses_decoder, self.max_num_hypotheses = torch.load(f)
+    def save_weights(self, model_path: Union[Path, str]):
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
+        with model_path.open('wb') as f:
+            torch.save((self.term_encoder, self.hypotheses_encoder,
+                        self.hypotheses_decoder, self.max_num_hypotheses), f)
+    def train(self, contexts: List[ProofContext],
+              hidden_size: int, learning_rate: float, n_epochs: int,
+              batch_size: int, print_every: int, gamma: float,
+              force_max_length: Optional[int] = None, epoch_step: int = 1,
+              num_layers: int = 1, allow_non_cuda: bool = False) -> None:
+        pass
 
 class CoqTermRNNVectorizer:
     symbol_mapping: Optional[Dict[str, int]]
