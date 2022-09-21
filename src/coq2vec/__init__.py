@@ -65,7 +65,8 @@ class CoqRNNVectorizer:
     def train(self, terms: List[str],
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
-              force_max_length: Optional[int] = None, epoch_step: int = 1) -> None:
+              force_max_length: Optional[int] = None, epoch_step: int = 1,
+              num_layers=1) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
         max_length_so_far = 0
@@ -97,8 +98,8 @@ class CoqRNNVectorizer:
         num_batches = int(term_tensors.size()[0] / batch_size)
         dataset_size = num_batches * batch_size
 
-        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size).to(self.device))
-        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2).to(self.device))
+        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size, num_layers).to(self.device))
+        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2, num_layers).to(self.device))
 
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate)
@@ -169,12 +170,12 @@ class CoqRNNVectorizer:
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int) -> None:
+    def __init__(self, input_size: int, hidden_size: int, num_layers: int = 1) -> None:
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.lstm = nn.LSTM(hidden_size, hidden_size)
+        self.embedding = nn.Embedding(input_size, hidden_size, num_layers=num_layers)
+        self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
 
     def forward(self, input: torch.LongTensor, hidden: torch.FloatTensor,
                 cell: torch.FloatTensor):
@@ -190,11 +191,11 @@ class EncoderRNN(nn.Module):
         return maybe_cuda(torch.zeros(1, batch_size, self.hidden_size, device=device))
 
 class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size: int, output_size: int) -> None:
+    def __init__(self, hidden_size: int, output_size: int, num_layers: int = 1) -> None:
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.lstm = nn.LSTM(hidden_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, hidden_size, num_layers=num_layers)
+        self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
