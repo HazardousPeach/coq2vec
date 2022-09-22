@@ -96,7 +96,9 @@ class CoqTermRNNVectorizer:
     def load_weights(self, model_path: Union[Path, str]) -> None:
         if isinstance(model_path, str):
             model_path = Path(model_path)
-        self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length = torch.load(model_path)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length = \
+            torch.load(model_path, map_location=self.device)
     def save_weights(self, model_path: Union[Path, str]):
         if isinstance(model_path, str):
             model_path = Path(model_path)
