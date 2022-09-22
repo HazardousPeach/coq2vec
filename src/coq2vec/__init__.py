@@ -190,19 +190,19 @@ class CoqTermRNNVectorizer:
             cell = self.model.initCell(1, device)
             for ei in range(input_length):
                 _, hidden, cell = self.model(term_tensor[ei], hidden, cell)
-        return hidden.cpu().detach().numpy().flatten()
+        return hidden.cpu().squeeze().detach().numpy()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
         assert self._decoder
         assert self.max_term_length
         assert self.token_vocab
-        assert term_vec.size() == torch.Size([self.model.hidden_size]), "Wrong dimensions for input"
+        assert term_vec.size() == torch.Size([self.model.num_layers, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
         device = "cuda" if use_cuda else "cpu"
         self._decoder.to(device)
         output = ""
         with torch.no_grad():
-            decoder_hidden = term_vec.to(device).view(1, 1, -1)
+            decoder_hidden = term_vec.to(device).view(self.model.num_layers, 1, self.model.hidden_size)
             decoder_input = torch.tensor([[SOS_token]], device=device)
             decoder_cell = self._decoder.initCell(1, device)
             for di in range(self.max_term_length):
