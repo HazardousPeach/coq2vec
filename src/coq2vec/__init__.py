@@ -15,8 +15,11 @@ import torch.nn.modules.loss as loss
 import torch.utils.data as data
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as scheduler
+from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.tensorboard import SummaryWriter
 
 from tqdm import tqdm
+import numpy as np
 
 class Obligation(NamedTuple):
     hypotheses: List[str]
@@ -136,11 +139,26 @@ class CoqTermRNNVectorizer:
                                       EOS_token) + [EOS_token]
             for term in tqdm(terms, desc="Tokenizing and normalizing")])
 
+        dataset_size = len(terms)
+        split_ratio = 0.05
+        indices = list(range(dataset_size))
+        np.random.shuffle(indices)
+        split = int((dataset_size * split_ratio) / batch_size) * batch_size
+        train_indices, val_indices = indices[split:], indices[:split]
+        valid_batch_size = batch_size // 2
+        train_sampler = SubsetRandomSampler(train_indices)
+        valid_sampler = SubsetRandomSampler(val_indices)
+        num_batches = int((dataset_size - split) / batch_size)
+        num_batches_valid = int(split / valid_batch_size)
+
+        train_dataset_size = num_batches * batch_size
+
+        valid_data_batches = data.DataLoader(data.TensorDataset(term_tensors),
+                                             batch_size=valid_batch_size, num_workers=0,
+                                             sampler=valid_sampler, pin_memory=True, drop_last=True)
         data_batches = data.DataLoader(data.TensorDataset(term_tensors),
                                        batch_size=batch_size, num_workers=0,
-                                       shuffle=True, pin_memory=True, drop_last=True)
-        num_batches = int(term_tensors.size()[0] / batch_size)
-        dataset_size = num_batches * batch_size
+                                       sampler=train_sampler, pin_memory=True, drop_last=True)
 
         encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size, num_layers).to(self.device))
         decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2, num_layers).to(self.device))
@@ -152,25 +170,42 @@ class CoqTermRNNVectorizer:
 
         criterion = nn.NLLLoss()
         training_start=time.time()
+        writer = SummaryWriter()
         print("Training")
         for epoch in range(n_epochs):
             print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
             for batch_num, (data_batch,) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
-                loss = autoencoderBatchLoss(encoder, decoder, maybe_cuda(data_batch), criterion)
+                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(data_batch), criterion)
+                writer.add_scalar("Batch loss/train", loss, epoch * num_batches + batch_num)
+                writer.add_scalar("Batch accuracy/train", accuracy, epoch * num_batches + batch_num)
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
                 if batch_num % print_every == 0:
                     items_processed = batch_num * batch_size + \
-                      epoch * dataset_size
+                      epoch * train_dataset_size
                     progress = items_processed / \
-                      (dataset_size * n_epochs)
+                      (train_dataset_size * n_epochs)
                     print("{} ({:7} {:5.2f}%) {:.4f}"
                           .format(timeSince(training_start, progress),
                                   items_processed, progress * 100,
                                   epoch_loss / batch_num))
+            with torch.no_grad():
+                valid_accuracy = maybe_cuda(torch.FloatTensor([0.]))
+                valid_loss = maybe_cuda(torch.FloatTensor([0.]))
+                for (valid_data_batch,) in valid_data_batches:
+                   batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_data_batch), criterion)
+                   valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
+                   valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
+            writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
+                              epoch * num_batches + batch_num)
+            writer.add_scalar("Accuracy/valid", valid_accuracy / num_batches_valid,
+                              epoch * num_batches + batch_num)
+            print(f"Validation loss: {valid_loss.item() / num_batches_valid}; "
+                  f"Validation accuracy: {valid_accuracy.item() / num_batches_valid}")
+
             adjuster.step()
             self.model = encoder
             self._decoder = decoder
@@ -261,7 +296,8 @@ class DecoderRNN(nn.Module):
     def initCell(self,batch_size: int, device: str):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
-def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, criterion: loss._Loss) -> torch.FloatTensor:
+def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor,
+                         criterion: loss._Loss, verbose=False) -> torch.FloatTensor:
     batch_size = data.size(0)
     input_length = data.size(1)
     target_length = input_length
@@ -271,6 +307,7 @@ def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     decoder_cell = decoder.initCell(batch_size, device)
 
     loss: torch.FloatTensor = maybe_cuda(torch.FloatTensor([0.]))
+    accuracy_sum: torch.FloatTensor = maybe_cuda(torch.FloatTensor([0.]))
     for ei in range(input_length):
         encoder_output,encoder_hidden, encoder_cell = encoder(data[:,ei], encoder_hidden, encoder_cell)
 
@@ -283,8 +320,15 @@ def autoencoderBatchLoss(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         decoder_input = topi.squeeze().detach()
 
         loss = cast(torch.FloatTensor, loss + cast(torch.FloatTensor, criterion(decoder_output, data[:,di])))
+        if verbose:
+            print(f"comparing {decoder_input} to {data[:,di]}")
+        accuracy_sum += torch.sum(decoder_input == data[:,di])
 
-    return loss
+    if verbose:
+        print(f"Accuracy sum is {accuracy_sum}")
+        print(f"Accuracy is {accuracy_sum / (batch_size * target_length)}")
+
+    return loss / (batch_size * target_length), accuracy_sum / (batch_size * target_length)
 
 
 symbols_regexp = (r',|(?::>)|(?::(?!=))|(?::=)|\)|\(|;|@\{|~|\+{1,2}|\*{1,2}|&&|\|\||'
