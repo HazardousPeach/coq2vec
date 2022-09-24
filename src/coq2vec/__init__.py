@@ -274,7 +274,7 @@ class EncoderRNN(nn.Module):
                 cell: torch.FloatTensor):
         batch_size = input.size(0)
         embedded = self.embedding(input).view(1, batch_size, self.hidden_size)
-        output, (hidden, cell) = self.lstm(embedded, (hidden,cell))
+        output, (hidden, cell) = self.lstm(F.relu(embedded), (hidden,cell))
         return output, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
