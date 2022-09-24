@@ -227,15 +227,15 @@ class CoqTermRNNVectorizer:
     def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
-        input_length = term_tensor.size(0)
         term_tensor = maybe_cuda(torch.LongTensor([term_seq]))
+        input_length = term_tensor.size(1)
         with torch.no_grad():
             device = "cuda" if use_cuda else "cpu"
             hidden = self.model.initHidden(1, device)
             cell = self.model.initCell(1, device)
             for ei in range(input_length):
-                _, hidden, cell = self.model(term_tensor[ei], hidden, cell)
-        return hidden.cpu().squeeze().detach().numpy()
+                _, hidden, cell = self.model(term_tensor[:,ei], hidden, cell)
+        return hidden.cpu()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
         return self.seq_to_term(self.vector_to_seq(term_vec))
     def vector_to_seq(self, term_vec: torch.FloatTensor) -> List[int]:
@@ -244,18 +244,18 @@ class CoqTermRNNVectorizer:
         assert self._decoder
         assert self.max_term_length
         assert self.token_vocab
-        assert term_vec.size() == torch.Size([self.model.num_layers, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
+        assert term_vec.size() == torch.Size([1, self.model.num_layers, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
         device = "cuda" if use_cuda else "cpu"
         self._decoder.to(device)
         output = ""
         with torch.no_grad():
-            decoder_hidden = term_vec.to(device).view(self.model.num_layers, 1, self.model.hidden_size)
+            decoder_hidden = term_vec.to(device)
             decoder_input = torch.tensor([[SOS_token]], device=device)
             decoder_cell = self._decoder.initCell(1, device)
             for di in range(self.max_term_length):
                 decoder_output, decoder_hidden, decoder_cell = self._decoder(decoder_input, decoder_hidden, decoder_cell)
                 topv, topi = decoder_output.topk(1)
-                next_char = topi.squeeze().detach()
+                next_char = topi.view(1).detach()
                 output_seq.append(next_char.item())
                 decoder_input = next_char
         return output_seq
@@ -290,14 +290,14 @@ class DecoderRNN(nn.Module):
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
         self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.softmax = nn.LogSoftmax(dim=2)
         self.num_layers = num_layers
 
     def forward(self, input, hidden, cell):
         batch_size = input.size(0)
-        embedded = self.embedding(input).view(1, batch_size, -1)
+        embedded = self.embedding(input).view(1, batch_size, self.hidden_size)
         output, (hidden, cell) = self.lstm(F.relu(embedded), (hidden, cell))
-        token_dist = self.softmax(self.out(output[0]))
+        token_dist = self.softmax(self.out(output))
         return token_dist, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
@@ -327,7 +327,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     for di in range(target_length):
         decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
         topv, topi = decoder_output.topk(1)
-        decoder_input = topi.squeeze().detach()
+        decoder_input = topi.view(batch_size).detach()
 
         loss = cast(torch.FloatTensor, loss + cast(torch.FloatTensor, criterion(decoder_output, data[:,di])))
         if verbose:
