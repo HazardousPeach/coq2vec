@@ -140,7 +140,7 @@ class CoqTermRNNVectorizer:
         np.random.shuffle(indices)
         split = int((dataset_size * split_ratio) / batch_size) * batch_size
         train_indices, val_indices = indices[split:], indices[:split]
-        valid_batch_size = batch_size // 2
+        valid_batch_size = max(batch_size // 2, 1)
         train_sampler = SubsetRandomSampler(train_indices)
         valid_sampler = SubsetRandomSampler(val_indices)
         num_batches = int((dataset_size - split) / batch_size)
