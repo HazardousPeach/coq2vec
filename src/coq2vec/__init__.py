@@ -131,12 +131,7 @@ class CoqTermRNNVectorizer:
         else:
             self.max_term_length = max_length_so_far
 
-        term_tensors = torch.LongTensor([
-            normalize_sentence_length([self.symbol_mapping[symb]
-                                       for symb in get_symbols(term)
-                                       if symb in self.symbol_mapping],
-                                      self.max_term_length,
-                                      EOS_token) + [EOS_token]
+        term_tensors = torch.LongTensor([self.term_to_seq(term)
             for term in tqdm(terms, desc="Tokenizing and normalizing")])
 
         dataset_size = len(terms)
@@ -211,14 +206,28 @@ class CoqTermRNNVectorizer:
             self._decoder = decoder
             pass
         pass
+    def term_to_seq(self, term_text: str) -> List[int]:
+        return normalize_sentence_length([self.symbol_mapping[symb]
+                                          for symb in get_symbols(term_text)
+                                          if symb in self.symbol_mapping],
+                                         self.max_term_length,
+                                         EOS_token) + [EOS_token]
+    def seq_to_term(self, seq: List[int]) -> str:
+        output_symbols = []
+        for item in seq:
+            if item == EOS_token:
+                break
+            assert item >= 2
+            output_symbols.append(self.token_vocab[item - 2])
+        return " ".join(output_symbols)
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
+        return self.seq_to_vector(self.term_to_seq(term_text))
+
+    def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
-        term_sentence = get_symbols(term_text)
-        term_tensor = maybe_cuda(torch.LongTensor(
-            [self.symbol_mapping[symb] for symb in term_sentence
-             if symb in self.symbol_mapping] + [EOS_token])).view(-1, 1)
         input_length = term_tensor.size(0)
+        term_tensor = maybe_cuda(torch.LongTensor([term_seq]))
         with torch.no_grad():
             device = "cuda" if use_cuda else "cpu"
             hidden = self.model.initHidden(1, device)
@@ -227,6 +236,8 @@ class CoqTermRNNVectorizer:
                 _, hidden, cell = self.model(term_tensor[ei], hidden, cell)
         return hidden.cpu().squeeze().detach().numpy()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
+        return self.seq_to_term(self.vector_to_seq(term_vec))
+    def vector_to_seq(self, term_vec: torch.FloatTensor) -> List[int]:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
         assert self._decoder
@@ -244,11 +255,9 @@ class CoqTermRNNVectorizer:
                 decoder_output, decoder_hidden, decoder_cell = self._decoder(decoder_input, decoder_hidden, decoder_cell)
                 topv, topi = decoder_output.topk(1)
                 next_char = topi.squeeze().detach()
-                if next_char == EOS_token:
-                    break
-                decoder_input = next_char.view(1, 1)
-                output += " " + self.token_vocab[decoder_input - 2]
-        return output
+                output_seq.append(next_char.item())
+                decoder_input = next_char
+        return output_seq
 
 
 class EncoderRNN(nn.Module):
