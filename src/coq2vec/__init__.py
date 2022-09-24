@@ -156,8 +156,9 @@ class CoqTermRNNVectorizer:
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
         encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size, num_layers).to(self.device))
+        self.model = encoder
         decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2, num_layers).to(self.device))
-
+        self._decoder = decoder
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate)
         adjuster = scheduler.StepLR(optimizer, epoch_step,
