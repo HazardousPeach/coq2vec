@@ -257,11 +257,11 @@ class CoqTermRNNVectorizer:
         assert term_vec.size() == torch.Size([self.model.num_layers, 1, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
         device = "cuda" if use_cuda else "cpu"
         self._decoder.to(device)
-        output = ""
         with torch.no_grad():
             decoder_hidden = term_vec.to(device)
             decoder_input = torch.tensor([[SOS_token]], device=device)
             decoder_cell = self._decoder.initCell(1, device)
+            output_seq = []
             for di in range(self.max_term_length):
                 decoder_output, decoder_hidden, decoder_cell = self._decoder(decoder_input, decoder_hidden, decoder_cell)
                 topv, topi = decoder_output.topk(1)
