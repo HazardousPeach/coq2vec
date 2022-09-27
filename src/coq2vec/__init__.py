@@ -324,18 +324,16 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     input_length = len(data.batch_sizes)
     target_length = input_length
     device = "cuda" if use_cuda else "cpu"
-    encoder_hidden = encoder.initHidden(batch_size, device)
-    encoder_cell = encoder.initCell(batch_size, device)
-    decoder_cell = decoder.initCell(batch_size, device)
 
-    loss: torch.FloatTensor = maybe_cuda(torch.FloatTensor([0.]))
-    accuracy_sum: torch.FloatTensor = maybe_cuda(torch.FloatTensor([0.]))
-    for ei in range(input_length):
-        encoder_output,encoder_hidden, encoder_cell = encoder(data[:,ei], encoder_hidden, encoder_cell)
-
+    loss: torch.FloatTensor = maybe_cuda(torch.tensor([0.]))
+    accuracy_sum = 0.
+    hidden = encoder.initHidden(batch_size, device)
+    cell = encoder.initCell(batch_size, device)
+    _, hidden, cell = encoder(data, hidden, cell)
+    decoder_hidden = hidden.clone()
     decoder_input = torch.tensor([[SOS_token]]*batch_size, device=device)
-    decoder_hidden = encoder_hidden
-
+    decoder_cell = decoder.initCell(batch_size, device)
+    decoder_results = []
     for di in range(target_length):
         decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
         topv, topi = decoder_output.topk(1)
