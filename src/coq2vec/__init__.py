@@ -352,7 +352,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     if verbose:
         print(f"Accuracy is {accuracy_sum * 100 / (batch_size * target_length):.2f}%")
 
-    return loss / (batch_size * target_length), accuracy_sum / (batch_size * target_length)
+    return loss / target_length, accuracy_sum / (batch_size * target_length)
 
 
 symbols_regexp = (r',|(?::>)|(?::(?!=))|(?::=)|\)|\(|;|@\{|~|\+{1,2}|\*{1,2}|&&|\|\||'
