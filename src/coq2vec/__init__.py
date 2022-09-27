@@ -15,6 +15,7 @@ import torch.nn.modules.loss as loss
 import torch.utils.data as data
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as scheduler
+from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 
@@ -133,6 +134,8 @@ class CoqTermRNNVectorizer:
 
         term_tensors = torch.LongTensor([self.term_to_seq(term)
             for term in tqdm(terms, desc="Tokenizing and normalizing")])
+        term_lengths = torch.LongTensor([min(self.term_seq_length(term)+1, self.max_term_length)
+            for term in tqdm(terms, desc="Counting lengths")])
 
         dataset_size = len(terms)
         split_ratio = 0.05
@@ -148,10 +151,10 @@ class CoqTermRNNVectorizer:
 
         train_dataset_size = num_batches * batch_size
 
-        valid_data_batches = data.DataLoader(data.TensorDataset(term_tensors),
+        valid_data_batches = data.DataLoader(data.TensorDataset(term_tensors, term_lengths),
                                              batch_size=valid_batch_size, num_workers=0,
                                              sampler=valid_sampler, pin_memory=True, drop_last=True)
-        data_batches = data.DataLoader(data.TensorDataset(term_tensors),
+        data_batches = data.DataLoader(data.TensorDataset(term_tensors, term_lengths),
                                        batch_size=batch_size, num_workers=0,
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
@@ -171,9 +174,11 @@ class CoqTermRNNVectorizer:
         for epoch in range(n_epochs):
             print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
-            for batch_num, (data_batch,) in enumerate(data_batches, start=1):
+            for batch_num, (term_batch, lengths_batch) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
-                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(data_batch), criterion)
+                lengths_sorted, sorted_idx = lengths_batch.sort(descending=True)
+                padded_term_batch = pack_padded_sequence(term_batch[sorted_idx], lengths_sorted, batch_first=True)
+                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch), maybe_cuda(term_batch), criterion)
                 writer.add_scalar("Batch loss/train", loss, epoch * num_batches + batch_num)
                 writer.add_scalar("Batch accuracy/train", accuracy, epoch * num_batches + batch_num)
                 loss.backward()
@@ -191,10 +196,12 @@ class CoqTermRNNVectorizer:
             with torch.no_grad():
                 valid_accuracy = maybe_cuda(torch.FloatTensor([0.]))
                 valid_loss = maybe_cuda(torch.FloatTensor([0.]))
-                for (valid_data_batch,) in valid_data_batches:
-                   batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_data_batch), criterion)
-                   valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
-                   valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
+                for (valid_data_batch,valid_lengths_batch) in valid_data_batches:
+                    lengths_sorted, sorted_idx = valid_lengths_batch.sort(descending=True)
+                    valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
+                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), maybe_cuda(valid_data_batch), criterion)
+                    valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
+                    valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
             writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
                               epoch * num_batches + batch_num)
             writer.add_scalar("Accuracy/valid", valid_accuracy / num_batches_valid,
@@ -214,6 +221,8 @@ class CoqTermRNNVectorizer:
                                           if symb in self.symbol_mapping],
                                          self.max_term_length,
                                          EOS_token) + [EOS_token]
+    def term_seq_length(self, term_text: str) -> int:
+        return len([True for symb in get_symbols(term_text) if symb in self.symbol_mapping])
     def seq_to_term(self, seq: List[int]) -> str:
         output_symbols = []
         for item in seq:
@@ -228,14 +237,14 @@ class CoqTermRNNVectorizer:
     def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
-        term_tensor = maybe_cuda(torch.LongTensor([term_seq]))
-        input_length = term_tensor.size(1)
+        input_length = len(term_seq)
+        term_tensor = pack_padded_sequence(maybe_cuda(torch.LongTensor([term_seq])),
+                                           torch.LongTensor([input_length]), batch_first=True)
         with torch.no_grad():
             device = "cuda" if use_cuda else "cpu"
             hidden = self.model.initHidden(1, device)
             cell = self.model.initCell(1, device)
-            for ei in range(input_length):
-                _, hidden, cell = self.model(term_tensor[:,ei], hidden, cell)
+            _, hidden, cell = self.model(term_tensor, hidden, cell)
         return hidden.cpu()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
         return self.seq_to_term(self.vector_to_seq(term_vec))
@@ -273,9 +282,10 @@ class EncoderRNN(nn.Module):
 
     def forward(self, input: torch.LongTensor, hidden: torch.FloatTensor,
                 cell: torch.FloatTensor):
-        batch_size = input.size(0)
-        embedded = self.embedding(input).view(1, batch_size, self.hidden_size)
-        output, (hidden, cell) = self.lstm(F.relu(embedded), (hidden,cell))
+        batch_size = input.batch_sizes[0]
+        max_input_length = len(input.batch_sizes)
+        embedded = PackedSequence(F.relu(self.embedding(input.data)), input.batch_sizes)
+        output, (hidden, cell) = self.lstm(embedded, (hidden,cell))
         return output, hidden, cell
 
     def initHidden(self,batch_size: int, device: str):
@@ -293,6 +303,7 @@ class DecoderRNN(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=2)
         self.num_layers = num_layers
+        self.output_size = output_size
 
     def forward(self, input, hidden, cell):
         batch_size = input.size(0)
@@ -309,8 +320,8 @@ class DecoderRNN(nn.Module):
 
 def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor,
                          criterion: loss._Loss, verbose=False) -> torch.FloatTensor:
-    batch_size = data.size(0)
-    input_length = data.size(1)
+    batch_size = data.batch_sizes[0]
+    input_length = len(data.batch_sizes)
     target_length = input_length
     device = "cuda" if use_cuda else "cpu"
     encoder_hidden = encoder.initHidden(batch_size, device)
