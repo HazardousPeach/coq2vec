@@ -51,6 +51,7 @@ def silent():
 with silent():
     use_cuda = torch.cuda.is_available()
 cuda_device = "cuda:0"
+PAD_token = 2
 EOS_token = 1
 SOS_token = 0
 
@@ -125,7 +126,7 @@ class CoqTermRNNVectorizer:
 
         self.token_vocab = list(token_set)
         self.symbol_mapping = {}
-        for idx, symbol in enumerate(self.token_vocab, start=2):
+        for idx, symbol in enumerate(self.token_vocab, start=3):
             self.symbol_mapping[symbol] = idx
         if force_max_length:
             self.max_term_length = min(force_max_length, max_length_so_far)
@@ -158,16 +159,16 @@ class CoqTermRNNVectorizer:
                                        batch_size=batch_size, num_workers=0,
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
-        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+2, hidden_size, num_layers).to(self.device))
+        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+3, hidden_size, num_layers).to(self.device))
         self.model = encoder
-        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2, num_layers).to(self.device))
+        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+3, num_layers).to(self.device))
         self._decoder = decoder
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate, momentum=momentum)
         adjuster = scheduler.StepLR(optimizer, epoch_step,
                                     gamma=gamma)
 
-        criterion = nn.NLLLoss()
+        criterion = nn.NLLLoss(ignore_index=PAD_token)
         training_start=time.time()
         writer = SummaryWriter()
         print("Training")
@@ -217,10 +218,10 @@ class CoqTermRNNVectorizer:
         pass
     def term_to_seq(self, term_text: str) -> List[int]:
         return normalize_sentence_length([self.symbol_mapping[symb]
-                                          for symb in get_symbols(term_text)
-                                          if symb in self.symbol_mapping],
+                                          for symb in get_symbols(term_text)[:self.max_term_length-1]
+                                          if symb in self.symbol_mapping] + [EOS_token],
                                          self.max_term_length,
-                                         EOS_token) + [EOS_token]
+                                         PAD_token)
     def term_seq_length(self, term_text: str) -> int:
         return len([True for symb in get_symbols(term_text) if symb in self.symbol_mapping])
     def seq_to_term(self, seq: List[int]) -> str:
@@ -228,8 +229,8 @@ class CoqTermRNNVectorizer:
         for item in seq:
             if item == EOS_token:
                 break
-            assert item >= 2
-            output_symbols.append(self.token_vocab[item - 2])
+            assert item >= 3
+            output_symbols.append(self.token_vocab[item - 3])
         return " ".join(output_symbols)
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
         return self.seq_to_vector(self.term_to_seq(term_text))
