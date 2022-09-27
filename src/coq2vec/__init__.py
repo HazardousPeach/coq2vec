@@ -113,7 +113,7 @@ class CoqTermRNNVectorizer:
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
               force_max_length: Optional[int] = None, epoch_step: int = 1,
-              num_layers: int = 1, allow_non_cuda: bool = False) -> Iterable['CoqRNNVectorizer']:
+              num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False) -> Iterable['CoqRNNVectorizer']:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
@@ -163,7 +163,7 @@ class CoqTermRNNVectorizer:
         decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+2, num_layers).to(self.device))
         self._decoder = decoder
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
-                              lr=learning_rate)
+                              lr=learning_rate, momentum=momentum)
         adjuster = scheduler.StepLR(optimizer, epoch_step,
                                     gamma=gamma)
 
