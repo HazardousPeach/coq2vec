@@ -207,7 +207,7 @@ class CoqTermRNNVectorizer:
             writer.add_scalar("Accuracy/valid", valid_accuracy / num_batches_valid,
                               epoch * num_batches + batch_num)
             print(f"Validation loss: {valid_loss.item() / num_batches_valid:.4f}; "
-                  f"Validation accuracy: {valid_accuracy.item() / num_batches_valid:.2f}%")
+                  f"Validation accuracy: {valid_accuracy.item() * 100 / num_batches_valid:.2f}%")
 
             adjuster.step()
             self.model = encoder
