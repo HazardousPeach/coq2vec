@@ -318,8 +318,8 @@ class DecoderRNN(nn.Module):
     def initCell(self,batch_size: int, device: str):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
-def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor,
-                         criterion: loss._Loss, verbose=False) -> torch.FloatTensor:
+def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, output: torch.LongTensor,
+                         criterion: loss._Loss, verbose=False, model: Optional[CoqTermRNNVectorizer] = None) -> torch.FloatTensor:
     batch_size = data.batch_sizes[0]
     input_length = len(data.batch_sizes)
     target_length = input_length
@@ -339,10 +339,15 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         topv, topi = decoder_output.topk(1)
         decoder_input = topi.view(batch_size).detach()
 
-        loss = cast(torch.FloatTensor, loss + cast(torch.FloatTensor, criterion(decoder_output, data[:,di])))
-        if verbose:
-            print(f"comparing {decoder_input} to {data[:,di]}")
-        accuracy_sum += torch.sum(decoder_input == data[:,di])
+        item_loss = criterion(decoder_output.view(batch_size, decoder.output_size), output[:,di])
+        loss = cast(torch.FloatTensor, loss + item_loss)
+        decoder_results.append(decoder_input)
+        accuracy_sum += torch.sum(decoder_input == output[:,di]).item()
+    if verbose:
+        for i in range(batch_size):
+            encoded_state = hidden[:,i].tolist()
+            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
+            print(f"{model.seq_to_term(data[i])} -> {data[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.seq_to_term(decoded_result)}")
 
     if verbose:
         print(f"Accuracy is {accuracy_sum * 100 / (batch_size * target_length):.2f}%")
