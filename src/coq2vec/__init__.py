@@ -254,7 +254,7 @@ class CoqTermRNNVectorizer:
         assert self._decoder
         assert self.max_term_length
         assert self.token_vocab
-        assert term_vec.size() == torch.Size([1, self.model.num_layers, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
+        assert term_vec.size() == torch.Size([self.model.num_layers, 1, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
         device = "cuda" if use_cuda else "cpu"
         self._decoder.to(device)
         output = ""
