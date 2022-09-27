@@ -345,8 +345,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         accuracy_sum += torch.sum(decoder_input == data[:,di])
 
     if verbose:
-        print(f"Accuracy sum is {accuracy_sum}")
-        print(f"Accuracy is {accuracy_sum / (batch_size * target_length)}")
+        print(f"Accuracy is {accuracy_sum * 100 / (batch_size * target_length):.2f}%")
 
     return loss / (batch_size * target_length), accuracy_sum / (batch_size * target_length)
 
