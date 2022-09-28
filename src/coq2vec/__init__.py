@@ -1,5 +1,6 @@
 from typing import (List, TypeVar, Dict, Optional, Union,
-                    overload, cast, Set, NamedTuple, Iterable)
+                    overload, cast, Set, NamedTuple, Iterable,
+                    Any)
 import re
 import sys
 import contextlib
@@ -21,6 +22,10 @@ from torch.utils.tensorboard import SummaryWriter
 
 from tqdm import tqdm
 import numpy as np
+
+from ray import tune, air
+from ray.air import session
+from ray.tune.search.optuna import OptunaSearch
 
 class Obligation(NamedTuple):
     hypotheses: List[str]
@@ -133,12 +138,24 @@ class CoqTermRNNVectorizer:
         else:
             self.max_term_length = max_length_so_far
 
-        term_tensors = torch.LongTensor([self.term_to_seq(term)
-            for term in tqdm(terms, desc="Tokenizing and normalizing")])
+        term_tensor = torch.LongTensor([self.term_to_seq(term)
+            for term in tqdm(terms, desc="Tokenizing and normalizing", disable=verbosity < 1)])
         term_lengths = torch.LongTensor([min(self.term_seq_length(term)+1, self.max_term_length)
-            for term in tqdm(terms, desc="Counting lengths")])
+            for term in tqdm(terms, desc="Counting lengths", disable=verbosity < 1)])
+        yield from self.train_with_tensors(term_tensor, term_lengths, hidden_size, learning_rate, n_epochs,
+                                           batch_size, print_every, gamma, force_max_length, epoch_step,
+                                           num_layers, momentum, allow_non_cuda)
+    def train_with_tensors(self, term_tensor: torch.LongTensor, term_lengths: torch.LongTensor,
+                           hidden_size: int, learning_rate: float, n_epochs: int,
+                           batch_size: int, print_every: int, gamma: float,
+                           force_max_length: Optional[int] = None, epoch_step: int = 1,
+                           num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False,
+                           verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
+        assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.max_term_length = term_tensor.size(1)
 
-        dataset_size = len(terms)
+        dataset_size = term_tensor.size(0)
         split_ratio = 0.05
         indices = list(range(dataset_size))
         np.random.shuffle(indices)
@@ -152,10 +169,10 @@ class CoqTermRNNVectorizer:
 
         train_dataset_size = num_batches * batch_size
 
-        valid_data_batches = data.DataLoader(data.TensorDataset(term_tensors, term_lengths),
+        valid_data_batches = data.DataLoader(data.TensorDataset(term_tensor, term_lengths),
                                              batch_size=valid_batch_size, num_workers=0,
                                              sampler=valid_sampler, pin_memory=True, drop_last=True)
-        data_batches = data.DataLoader(data.TensorDataset(term_tensors, term_lengths),
+        data_batches = data.DataLoader(data.TensorDataset(term_tensor, term_lengths),
                                        batch_size=batch_size, num_workers=0,
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
@@ -213,7 +230,7 @@ class CoqTermRNNVectorizer:
             adjuster.step()
             self.model = encoder
             self._decoder = decoder
-            yield valid_loss
+            yield valid_loss.item() / num_batches_valid
             pass
         pass
     def term_to_seq(self, term_text: str) -> List[int]:
@@ -355,6 +372,39 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
 
     return loss / target_length, accuracy_sum / (batch_size * target_length)
 
+def tune_termrnn_hyperparameters(terms: List[str], n_epochs: int,
+                                 batch_size: int, print_every: int,
+                                 force_max_length: Optional[int] = None, epoch_step: int = 1,
+                                 allow_non_cuda: bool = False,
+                                 search_space: Optional[Dict[str, Any]] = None) -> None:
+    def objective(config: Dict[str, Union[float, int]], terms: List[str]) -> float:
+        vectorizer = CoqTermRNNVectorizer()
+        for epoch, valid_loss in enumerate(vectorizer.train(terms,
+                                                            hidden_size=config['hidden_size'],
+                                                            learning_rate=config['learning_rate'],
+                                                            num_layers=config['num_layers'],
+                                                            momentum=config['momentum'],
+                                                            n_epochs=n_epochs,
+                                                            batch_size=64, print_every=16,
+                                                            gamma=config['gamma'], epoch_step=1,
+                                                            force_max_length=30)):
+            session.report({"valid_loss": valid_loss})
+    if not search_space:
+        search_space={'hidden_size': tune.lograndint(64, 4096), "learning_rate": tune.loguniform(1e-4, 10), 'momentum': tune.uniform(0.1, 0.9), 'num_layers': tune.randint(1, 3), 'gamma': tune.uniform(0.1, 1.0)}
+    algo=OptunaSearch()
+    tuner = tune.Tuner(tune.with_resources(
+                         tune.with_parameters(objective, terms=terms),
+                         {"cpu": 1, "gpu": 1}),
+                       tune_config=tune.TuneConfig(
+                         metric="valid_loss",
+                         mode="min",
+                         search_alg=algo,
+                         num_samples=64),
+                       run_config=air.RunConfig(
+                         stop={"training_iteration": 5}),
+                       param_space=search_space)
+    results = tuner.fit()
+    print("Best config is:", results.get_best_result().config)
 
 symbols_regexp = (r',|(?::>)|(?::(?!=))|(?::=)|\)|\(|;|@\{|~|\+{1,2}|\*{1,2}|&&|\|\||'
                   r'(?<!\\)/(?!\\)|/\\|\\/|(?<![<*+-/|&])=(?!>)|%|(?<!<)-(?!>)|'
