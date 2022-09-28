@@ -119,12 +119,13 @@ class CoqTermRNNVectorizer:
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
               force_max_length: Optional[int] = None, epoch_step: int = 1,
-              num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False) -> Iterable['CoqRNNVectorizer']:
+              num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False,
+              verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
         max_length_so_far = 0
-        for term in tqdm(terms, desc="Getting symbols"):
+        for term in tqdm(terms, desc="Getting symbols", disable=verbosity < 1):
             for symbol in get_symbols(term):
                 token_set.add(symbol)
             max_length_so_far = max(len(get_symbols(term)), max_length_so_far)
@@ -188,9 +189,12 @@ class CoqTermRNNVectorizer:
         criterion = nn.NLLLoss(ignore_index=PAD_token)
         training_start=time.time()
         writer = SummaryWriter()
-        print("Training")
+        if verbosity >= 1:
+            print("Training")
         for epoch in range(n_epochs):
-            print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
+            if verbosity >= 1:
+                print("Training")
+                print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
             for batch_num, (term_batch, lengths_batch) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
@@ -207,10 +211,11 @@ class CoqTermRNNVectorizer:
                       epoch * train_dataset_size
                     progress = items_processed / \
                       (train_dataset_size * n_epochs)
-                    print("{} ({:7} {:5.2f}%) {:.4f}"
-                          .format(timeSince(training_start, progress),
-                                  items_processed, progress * 100,
-                                  epoch_loss / batch_num))
+                    if verbosity >= 1:
+                        print("{} ({:7} {:5.2f}%) {:.4f}"
+                              .format(timeSince(training_start, progress),
+                                      items_processed, progress * 100,
+                                      epoch_loss / batch_num))
             with torch.no_grad():
                 valid_accuracy = maybe_cuda(torch.FloatTensor([0.]))
                 valid_loss = maybe_cuda(torch.FloatTensor([0.]))
@@ -224,8 +229,9 @@ class CoqTermRNNVectorizer:
                               epoch * num_batches + batch_num)
             writer.add_scalar("Accuracy/valid", valid_accuracy / num_batches_valid,
                               epoch * num_batches + batch_num)
-            print(f"Validation loss: {valid_loss.item() / num_batches_valid:.4f}; "
-                  f"Validation accuracy: {valid_accuracy.item() * 100 / num_batches_valid:.2f}%")
+            if verbosity >= 1:
+                print(f"Validation loss: {valid_loss.item() / num_batches_valid:.4f}; "
+                      f"Validation accuracy: {valid_accuracy.item() * 100 / num_batches_valid:.2f}%")
 
             adjuster.step()
             self.model = encoder
