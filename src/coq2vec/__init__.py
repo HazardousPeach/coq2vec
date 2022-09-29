@@ -360,6 +360,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     decoder_input = torch.tensor([[SOS_token]]*batch_size, device=device)
     decoder_cell = decoder.initCell(batch_size, device)
     decoder_results = []
+    target_input = torch.tensor([[SOS_token]]*batch_size, device=device)
     for di in range(target_length):
         # target = output[:,target_length-(di+1)]
         if random.random() < teacher_forcing_ratio:
