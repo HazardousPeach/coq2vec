@@ -194,7 +194,6 @@ class CoqTermRNNVectorizer:
             print("Training")
         for epoch in range(n_epochs):
             if verbosity >= 1:
-                print("Training")
                 print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
             for batch_num, (term_batch, lengths_batch) in enumerate(data_batches, start=1):
