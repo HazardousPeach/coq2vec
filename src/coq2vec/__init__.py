@@ -252,14 +252,18 @@ class CoqTermRNNVectorizer:
                                          PAD_token)
     def term_seq_length(self, term_text: str) -> int:
         return len([True for symb in get_symbols(term_text) if symb in self.symbol_mapping])
-    def seq_to_term(self, seq: List[int]) -> str:
+    def seq_to_symbol_list(self, seq: List[int]) -> List[str]:
         output_symbols = []
         for item in seq:
             if item == EOS_token:
                 break
             assert item >= 3
             output_symbols.append(self.token_vocab[item - 3])
-        return " ".join(output_symbols[::-1])
+        return output_symbols
+    def output_seq_to_term(self, seq: List[int]) -> str:
+        return " ".join(self.seq_to_symbol_list(seq)[::-1])
+    def input_seq_to_term(self, seq: List[int]) -> str:
+        return " ".join(self.seq_to_symbol_list(seq))
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
         return self.seq_to_vector(self.term_to_seq(term_text))
 
@@ -276,7 +280,7 @@ class CoqTermRNNVectorizer:
             _, hidden, cell = self.model(term_tensor, hidden, cell)
         return hidden.cpu()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
-        return self.seq_to_term(self.vector_to_seq(term_vec))
+        return self.output_seq_to_term(self.vector_to_seq(term_vec))
     def vector_to_seq(self, term_vec: torch.FloatTensor) -> List[int]:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
@@ -382,8 +386,8 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     if verbosity > 1:
         for i in range(batch_size):
             encoded_state = hidden[:,i].tolist()
-            decoded_result = [decoder_results[target_length-(j+1)][i].item() for j in range(target_length)]
-            print(f"{model.seq_to_term(data[i])} -> {data[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.seq_to_term(decoded_result)}")
+            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
+            print(f"{model.input_seq_to_term(output[i])} -> {output[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.output_seq_to_term(decoded_result)}")
     elif verbosity > 0:
         for i in range(batch_size):
             if lengths[i] >= 25:
@@ -391,10 +395,9 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
             target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(j+2)] if j < lengths[i]-1
                                                   else EOS_token if j == lengths[i]-1 else PAD_token
                                                   for j in range(target_length)]))
-            print(f"Target is {target}")
-            encoded_state = hidden[:,i].tolist()
-            decoded_result = [decoder_results[target_length-(j+1),i].item() for j in range(target_length)]
-            print(f"{model.seq_to_term(output[i])} -> {output[i].tolist()} -> {decoded_result} -> {model.seq_to_term(decoder_results[:,i])}")
+            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
+            # print(f"Target is {model.output_seq_to_term(target)} -> {target.tolist()}")
+            print(f"{model.input_seq_to_term(output[i])} -> {output[i].tolist()} -> {decoded_result} -> {model.output_seq_to_term(decoded_result)}")
             break
 
     return loss / target_length, accuracy_sum / (batch_size * target_length)

@@ -6,7 +6,7 @@ def display(s: str) -> str:
   input_seq = vectorizer.term_to_seq(s)
   encoded_term = vectorizer.seq_to_vector(input_seq)
   output_seq = vectorizer.vector_to_seq(encoded_term)
-  output_term = vectorizer.seq_to_term(output_seq)
+  output_term = vectorizer.output_seq_to_term(output_seq)
   if encoded_term.flatten().size(0) < 32:
       print(f"{s} -> {input_seq} -> {encoded_term.tolist()} -> {output_seq} -> {output_term}")
   else:
