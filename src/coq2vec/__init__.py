@@ -219,10 +219,12 @@ class CoqTermRNNVectorizer:
             with torch.no_grad():
                 valid_accuracy = maybe_cuda(torch.FloatTensor([0.]))
                 valid_loss = maybe_cuda(torch.FloatTensor([0.]))
-                for (valid_data_batch,valid_lengths_batch) in valid_data_batches:
+                for idx, (valid_data_batch,valid_lengths_batch) in enumerate(valid_data_batches):
                     lengths_sorted, sorted_idx = valid_lengths_batch.sort(descending=True)
                     valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
-                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), maybe_cuda(valid_data_batch[sorted_idx]), criterion, teacher_forcing_ratio)
+                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), 
+                                                                      maybe_cuda(valid_data_batch[sorted_idx]),
+                                                                      criterion, teacher_forcing_ratio, verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
                     valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
                     valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
             writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
@@ -343,7 +345,7 @@ class DecoderRNN(nn.Module):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
 def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, output: torch.LongTensor, lengths: torch.LongTensor,
-                         criterion: loss._Loss, teacher_forcing_ratio: float, verbose=False, model: Optional[CoqTermRNNVectorizer] = None) -> torch.FloatTensor:
+                         criterion: loss._Loss, teacher_forcing_ratio: float, verbosity:int = 0, model: Optional[CoqTermRNNVectorizer] = None) -> torch.FloatTensor:
     batch_size = data.batch_sizes[0]
     input_length = len(data.batch_sizes)
     target_length = input_length
@@ -373,10 +375,10 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         loss = cast(torch.FloatTensor, loss + item_loss)
         decoder_results.append(decoder_input)
         accuracy_sum += torch.sum(decoder_input == target).item()
-    if verbose:
+    if verbosity > 1:
         for i in range(batch_size):
             encoded_state = hidden[:,i].tolist()
-            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
+            decoded_result = [decoder_results[target_length-(j+1)][i].item() for j in range(target_length)]
             print(f"{model.seq_to_term(data[i])} -> {data[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.seq_to_term(decoded_result)}")
 
     if verbose:
