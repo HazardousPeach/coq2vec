@@ -200,7 +200,7 @@ class CoqTermRNNVectorizer:
                 optimizer.zero_grad()
                 lengths_sorted, sorted_idx = lengths_batch.sort(descending=True)
                 padded_term_batch = pack_padded_sequence(term_batch[sorted_idx], lengths_sorted, batch_first=True)
-                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch), maybe_cuda(term_batch), criterion)
+                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch), maybe_cuda(term_batch), criterion, teacher_forcing_ratio)
                 writer.add_scalar("Batch loss/train", loss, epoch * num_batches + batch_num)
                 writer.add_scalar("Batch accuracy/train", accuracy, epoch * num_batches + batch_num)
                 loss.backward()
@@ -222,7 +222,7 @@ class CoqTermRNNVectorizer:
                 for (valid_data_batch,valid_lengths_batch) in valid_data_batches:
                     lengths_sorted, sorted_idx = valid_lengths_batch.sort(descending=True)
                     valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
-                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), maybe_cuda(valid_data_batch), criterion)
+                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), maybe_cuda(valid_data_batch), criterion, teacher_forcing_ratio)
                     valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
                     valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
             writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
