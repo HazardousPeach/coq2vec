@@ -200,7 +200,9 @@ class CoqTermRNNVectorizer:
                 optimizer.zero_grad()
                 lengths_sorted, sorted_idx = lengths_batch.sort(descending=True)
                 padded_term_batch = pack_padded_sequence(term_batch[sorted_idx], lengths_sorted, batch_first=True)
-                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch), maybe_cuda(term_batch[sorted_idx]), criterion, teacher_forcing_ratio)
+                loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch),
+                                                      maybe_cuda(term_batch[sorted_idx]), maybe_cuda(lengths_sorted),
+                                                      criterion, teacher_forcing_ratio)
                 writer.add_scalar("Batch loss/train", loss, epoch * num_batches + batch_num)
                 writer.add_scalar("Batch accuracy/train", accuracy, epoch * num_batches + batch_num)
                 loss.backward()
@@ -222,8 +224,8 @@ class CoqTermRNNVectorizer:
                 for idx, (valid_data_batch,valid_lengths_batch) in enumerate(valid_data_batches):
                     lengths_sorted, sorted_idx = valid_lengths_batch.sort(descending=True)
                     valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
-                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch), 
-                                                                      maybe_cuda(valid_data_batch[sorted_idx]),
+                    batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch),
+                                                                      maybe_cuda(valid_data_batch[sorted_idx]), lengths_sorted,
                                                                       criterion, teacher_forcing_ratio, verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
                     valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
                     valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
@@ -256,7 +258,7 @@ class CoqTermRNNVectorizer:
                 break
             assert item >= 3
             output_symbols.append(self.token_vocab[item - 3])
-        return " ".join(output_symbols)
+        return " ".join(output_symbols[::-1])
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
         return self.seq_to_vector(self.term_to_seq(term_text))
 
@@ -367,7 +369,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
              decoder_output, decoder_hidden, decoder_cell = decoder(target_input, decoder_hidden, decoder_cell)
         else:
              decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
-        target = output[:,di]
+        target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(di+2)] if di < lengths[i]-1 else EOS_token if di == lengths[i]-1 else PAD_token for i in range(batch_size)]))
         topv, topi = decoder_output.topk(1)
         decoder_input = topi.view(batch_size).detach()
         target_input = target
@@ -385,6 +387,10 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         for i in range(batch_size):
             if lengths[i] >= 25:
                 continue
+            target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(j+2)] if j < lengths[i]-1
+                                                  else EOS_token if j == lengths[i]-1 else PAD_token
+                                                  for j in range(target_length)]))
+            print(f"Target is {target}")
             encoded_state = hidden[:,i].tolist()
             decoded_result = [decoder_results[target_length-(j+1),i].item() for j in range(target_length)]
             print(f"{model.seq_to_term(output[i])} -> {output[i].tolist()} -> {decoded_result} -> {model.seq_to_term(decoder_results[:,i])}")
