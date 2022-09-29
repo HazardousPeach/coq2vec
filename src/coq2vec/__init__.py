@@ -196,13 +196,14 @@ class CoqTermRNNVectorizer:
             if verbosity >= 1:
                 print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
+            epoch_tf_ratio = teacher_forcing_ratio * (1 - (epoch / (n_epochs - 1)))
             for batch_num, (term_batch, lengths_batch) in enumerate(data_batches, start=1):
                 optimizer.zero_grad()
                 lengths_sorted, sorted_idx = lengths_batch.sort(descending=True)
                 padded_term_batch = pack_padded_sequence(term_batch[sorted_idx], lengths_sorted, batch_first=True)
                 loss, accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(padded_term_batch),
                                                       maybe_cuda(term_batch[sorted_idx]), maybe_cuda(lengths_sorted),
-                                                      criterion, teacher_forcing_ratio)
+                                                      criterion, epoch_tf_ratio)
                 writer.add_scalar("Batch loss/train", loss, epoch * num_batches + batch_num)
                 writer.add_scalar("Batch accuracy/train", accuracy, epoch * num_batches + batch_num)
                 loss.backward()
@@ -226,7 +227,7 @@ class CoqTermRNNVectorizer:
                     valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
                     batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch),
                                                                       maybe_cuda(valid_data_batch[sorted_idx]), lengths_sorted,
-                                                                      criterion, teacher_forcing_ratio, verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
+                                                                      criterion, epoch_tf_ratio, verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
                     valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
                     valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
             writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
