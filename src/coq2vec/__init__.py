@@ -382,7 +382,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         item_loss = criterion(decoder_output.view(batch_size, decoder.output_size), target)
         loss = cast(torch.FloatTensor, loss + item_loss)
         decoder_results.append(decoder_input)
-        accuracy_sum += torch.sum(decoder_input == target).item()
+        accuracy_sum += torch.sum((decoder_input == target) * (target != PAD_token).int().float()).item()
     if verbosity > 1:
         for i in range(batch_size):
             encoded_state = hidden[:,i].tolist()
