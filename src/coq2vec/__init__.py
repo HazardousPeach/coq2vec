@@ -381,9 +381,14 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
             encoded_state = hidden[:,i].tolist()
             decoded_result = [decoder_results[target_length-(j+1)][i].item() for j in range(target_length)]
             print(f"{model.seq_to_term(data[i])} -> {data[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.seq_to_term(decoded_result)}")
-
-    if verbose:
-        print(f"Accuracy is {accuracy_sum * 100 / (batch_size * target_length):.2f}%")
+    elif verbosity > 0:
+        for i in range(batch_size):
+            if lengths[i] >= 25:
+                continue
+            encoded_state = hidden[:,i].tolist()
+            decoded_result = [decoder_results[target_length-(j+1),i].item() for j in range(target_length)]
+            print(f"{model.seq_to_term(output[i])} -> {output[i].tolist()} -> {decoded_result} -> {model.seq_to_term(decoder_results[:,i])}")
+            break
 
     return loss / target_length, accuracy_sum / (batch_size * target_length)
 
