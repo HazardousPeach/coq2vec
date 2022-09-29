@@ -7,6 +7,7 @@ import contextlib
 import pickle
 import itertools
 import time
+import random
 from pathlib import Path
 
 import torch
@@ -119,8 +120,8 @@ class CoqTermRNNVectorizer:
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
               force_max_length: Optional[int] = None, epoch_step: int = 1,
-              num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False,
-              verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
+              num_layers: int = 1, momentum: float = 0, teacher_forcing_ratio: float = 0.0,
+              allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
@@ -145,13 +146,13 @@ class CoqTermRNNVectorizer:
             for term in tqdm(terms, desc="Counting lengths", disable=verbosity < 1)])
         yield from self.train_with_tensors(term_tensor, term_lengths, hidden_size, learning_rate, n_epochs,
                                            batch_size, print_every, gamma, force_max_length, epoch_step,
-                                           num_layers, momentum, allow_non_cuda)
+                                           num_layers, momentum, teacher_forcing_ratio, allow_non_cuda, verbosity)
     def train_with_tensors(self, term_tensor: torch.LongTensor, term_lengths: torch.LongTensor,
                            hidden_size: int, learning_rate: float, n_epochs: int,
                            batch_size: int, print_every: int, gamma: float,
                            force_max_length: Optional[int] = None, epoch_step: int = 1,
-                           num_layers: int = 1, momentum: float = 0, allow_non_cuda: bool = False,
-                           verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
+                           num_layers: int = 1, momentum: float = 0, teacher_forcing_ratio: float = 0.0,
+                           allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.max_term_length = term_tensor.size(1)
@@ -342,8 +343,8 @@ class DecoderRNN(nn.Module):
     def initCell(self,batch_size: int, device: str):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
-def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, output: torch.LongTensor,
-                         criterion: loss._Loss, verbose=False, model: Optional[CoqTermRNNVectorizer] = None) -> torch.FloatTensor:
+def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, output: torch.LongTensor, lengths: torch.LongTensor,
+                         criterion: loss._Loss, teacher_forcing_ratio: float, verbose=False, model: Optional[CoqTermRNNVectorizer] = None) -> torch.FloatTensor:
     batch_size = data.batch_sizes[0]
     input_length = len(data.batch_sizes)
     target_length = input_length
@@ -359,14 +360,20 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     decoder_cell = decoder.initCell(batch_size, device)
     decoder_results = []
     for di in range(target_length):
-        decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
+        # target = output[:,target_length-(di+1)]
+        if random.random() < teacher_forcing_ratio:
+             decoder_output, decoder_hidden, decoder_cell = decoder(target_input, decoder_hidden, decoder_cell)
+        else:
+             decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
+        target = output[:,di]
         topv, topi = decoder_output.topk(1)
         decoder_input = topi.view(batch_size).detach()
+        target_input = target
 
-        item_loss = criterion(decoder_output.view(batch_size, decoder.output_size), output[:,di])
+        item_loss = criterion(decoder_output.view(batch_size, decoder.output_size), target)
         loss = cast(torch.FloatTensor, loss + item_loss)
         decoder_results.append(decoder_input)
-        accuracy_sum += torch.sum(decoder_input == output[:,di]).item()
+        accuracy_sum += torch.sum(decoder_input == target).item()
     if verbose:
         for i in range(batch_size):
             encoded_state = hidden[:,i].tolist()
@@ -390,13 +397,15 @@ def tune_termrnn_hyperparameters(terms: List[str], n_epochs: int,
                                                             learning_rate=config['learning_rate'],
                                                             num_layers=config['num_layers'],
                                                             momentum=config['momentum'],
+                                                            teacher_forcing_ratio=config['teacher_forcing_ratio'],
                                                             n_epochs=n_epochs,
                                                             batch_size=64, print_every=16,
                                                             gamma=config['gamma'], epoch_step=1,
                                                             force_max_length=30)):
             session.report({"valid_loss": valid_loss})
     if not search_space:
-        search_space={'hidden_size': tune.lograndint(64, 4096), "learning_rate": tune.loguniform(1e-4, 10), 'momentum': tune.uniform(0.1, 0.9), 'num_layers': tune.randint(1, 3), 'gamma': tune.uniform(0.1, 1.0)}
+        search_space={'hidden_size': tune.lograndint(64, 4096), "learning_rate": tune.loguniform(1e-4, 10), "teacher_forcing_ratio": tune.uniform(0.0, 1.0),
+                      'momentum': tune.uniform(0.1, 0.9), 'num_layers': tune.randint(1, 3), 'gamma': tune.uniform(0.1, 1.0)}
     algo=OptunaSearch()
     tuner = tune.Tuner(tune.with_resources(
                          tune.with_parameters(objective, terms=terms),
