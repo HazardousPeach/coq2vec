@@ -389,16 +389,14 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
             decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
             print(f"{model.input_seq_to_term(output[i])} -> {output[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.output_seq_to_term(decoded_result)}")
     elif verbosity > 0:
-        for i in range(batch_size):
-            if lengths[i] >= 25:
-                continue
+        for i in range(min(batch_size, 4)):
             target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(j+2)] if j < lengths[i]-1
                                                   else EOS_token if j == lengths[i]-1 else PAD_token
                                                   for j in range(target_length)]))
             decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
             # print(f"Target is {model.output_seq_to_term(target)} -> {target.tolist()}")
-            print(f"{model.input_seq_to_term(output[i])} -> {output[i].tolist()} -> {decoded_result} -> {model.output_seq_to_term(decoded_result)}")
-            break
+            print(f"{model.input_seq_to_term(output[i])} -> {model.output_seq_to_term(decoded_result)}")
+            # assert output[i, 0] not in [model.symbol_mapping[c] for c in [".", ")"]], f"Input term {output[i]} doesn't make any sense!"
 
     return loss / target_length, accuracy_sum / (batch_size * target_length)
 
