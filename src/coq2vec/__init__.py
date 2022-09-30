@@ -227,7 +227,7 @@ class CoqTermRNNVectorizer:
                     valid_padded_batch = pack_padded_sequence(valid_data_batch[sorted_idx], lengths_sorted, batch_first=True)
                     batch_loss, batch_accuracy = autoencoderBatchIter(encoder, decoder, maybe_cuda(valid_padded_batch),
                                                                       maybe_cuda(valid_data_batch[sorted_idx]), lengths_sorted,
-                                                                      criterion, epoch_tf_ratio, verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
+                                                                      criterion, 0., verbosity=verbosity if idx == len(valid_data_batches)-1 else 0, model=self)
                     valid_loss = cast(torch.FloatTensor, valid_loss + batch_loss)
                     valid_accuracy = cast(torch.FloatTensor, valid_accuracy + batch_accuracy)
             writer.add_scalar("Loss/valid", valid_loss / num_batches_valid,
