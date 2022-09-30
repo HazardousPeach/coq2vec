@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
+
 from coq2vec import CoqTermRNNVectorizer
 import torch
 vectorizer = CoqTermRNNVectorizer()
-vectorizer.load_weights("term2vec-weights-29.dat")
+vectorizer.load_weights("weights/term2vec-weights-29.dat")
 def display(s: str) -> str:
   input_seq = vectorizer.term_to_seq(s)
   encoded_term = vectorizer.seq_to_vector(input_seq)
@@ -13,3 +15,4 @@ def display(s: str) -> str:
       print(f"{s} -> {input_seq} -> {output_seq} -> {output_term}")
 display("n = n")
 display("nat")
+display("( 2 * prec + 1 <= prec' ) % Z -> round_round_plus_hyp ( FLX_exp prec ) ( FLX_exp prec' ) .")

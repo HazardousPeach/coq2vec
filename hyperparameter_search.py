@@ -15,7 +15,7 @@ def get_symbols(string: str) -> List[str]:
 
 max_length = 20
 
-with open('/home/asanchezster_umass_edu/work/coq2vec/terms.txt', 'r') as f:
+with open('/home/alex/coq2vec/terms.txt', 'r') as f:
     terms = [l.strip() for l in f if len(get_symbols(l)) < max_length - 1]
 
 tune_termrnn_hyperparameters(random.sample(terms, 5242), n_epochs=20, batch_size=32,
