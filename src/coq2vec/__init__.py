@@ -97,24 +97,28 @@ class CoqTermRNNVectorizer:
     model: Optional['EncoderRNN']
     _decoder: Optional['DecoderRNN']
     max_term_length: Optional[int]
+    epochs_trained: int
     def __init__(self) -> None:
         self.symbol_mapping = None
         self.token_vocab = None
         self.model = None
         self._decoder = None
         self.max_term_length = None
+        self.epochs_trained = 0
         pass
     def load_weights(self, model_path: Union[Path, str]) -> None:
         if isinstance(model_path, str):
             model_path = Path(model_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length = \
+        self.symbol_mapping, self.token_vocab, self.model, \
+          self._decoder, self.max_term_length, self.epochs_trained = \
             torch.load(model_path, map_location=self.device)
     def save_weights(self, model_path: Union[Path, str]):
         if isinstance(model_path, str):
             model_path = Path(model_path)
         with model_path.open('wb') as f:
-            torch.save((self.symbol_mapping, self.token_vocab, self.model, self._decoder, self.max_term_length), f)
+            torch.save((self.symbol_mapping, self.token_vocab, self.model,
+                        self._decoder, self.max_term_length, self.epochs_trained), f)
         pass
     def train(self, terms: List[str],
               hidden_size: int, learning_rate: float, n_epochs: int,
@@ -192,7 +196,9 @@ class CoqTermRNNVectorizer:
         writer = SummaryWriter()
         if verbosity >= 1:
             print("Training")
-        for epoch in range(n_epochs):
+        for pre_epoch in range(self.epochs_trained):
+            adjuster.step()
+        for epoch in range(self.epochs_trained, n_epochs):
             if verbosity >= 1:
                 print("Epoch {} (learning rate {:.6f})".format(epoch, optimizer.param_groups[0]['lr']))
             epoch_loss = 0.
