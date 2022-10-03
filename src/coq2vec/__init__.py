@@ -402,7 +402,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
                                                   for j in range(target_length)]))
             decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
             # print(f"Target is {model.output_seq_to_term(target)} -> {target.tolist()}")
-            print(f"{model.input_seq_to_term(output[i])} -> {model.output_seq_to_term(decoded_result)}")
+            print(f"{model.input_seq_to_term(output[i])} [======>>\n{model.output_seq_to_term(decoded_result)}")
             # assert output[i, 0] not in [model.symbol_mapping[c] for c in [".", ")"]], f"Input term {output[i]} doesn't make any sense!"
 
     return loss / target_length, accuracy_sum / accuracy_denominator
