@@ -389,6 +389,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         loss = cast(torch.FloatTensor, loss + item_loss)
         decoder_results.append(decoder_input)
         accuracy_sum += torch.sum((decoder_input == target) * (target != PAD_token).int().float()).item()
+    accuracy_denominator = torch.sum((output != PAD_token).int().float()).item()
     if verbosity > 1:
         for i in range(batch_size):
             encoded_state = hidden[:,i].tolist()
@@ -404,7 +405,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
             print(f"{model.input_seq_to_term(output[i])} -> {model.output_seq_to_term(decoded_result)}")
             # assert output[i, 0] not in [model.symbol_mapping[c] for c in [".", ")"]], f"Input term {output[i]} doesn't make any sense!"
 
-    return loss / target_length, accuracy_sum / (batch_size * target_length)
+    return loss / target_length, accuracy_sum / accuracy_denominator
 
 def tune_termrnn_hyperparameters(terms: List[str], n_epochs: int,
                                  batch_size: int, print_every: int,
