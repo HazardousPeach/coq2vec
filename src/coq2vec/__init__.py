@@ -397,13 +397,18 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
             print(f"{model.input_seq_to_term(output[i])} -> {output[i].tolist()} -> {encoded_state} -> {decoded_result} -> {model.output_seq_to_term(decoded_result)}")
     elif verbosity > 0:
         for i in range(min(batch_size, 4)):
-            target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(j+2)] if j < lengths[i]-1
-                                                  else EOS_token if j == lengths[i]-1 else PAD_token
-                                                  for j in range(target_length)]))
-            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
+            # target = maybe_cuda(torch.LongTensor([output[i, lengths[i]-(j+2)] if j < lengths[i]-1
+            #                                       else EOS_token if j == lengths[i]-1 else PAD_token
+            #                                       for j in range(target_length)]))
             # print(f"Target is {model.output_seq_to_term(target)} -> {target.tolist()}")
+            decoded_result = [decoder_results[j][i].item() for j in range(target_length)]
             print(f"{model.input_seq_to_term(output[i])} [======>>\n{model.output_seq_to_term(decoded_result)}")
+            # sample_correct = torch.sum((maybe_cuda(torch.tensor(decoded_result)) == target) * (target != PAD_token).int().float()).item()
+            # sample_denominator = torch.sum((target != PAD_token).int().float()).item()
+            # print(f"Number of matching tokens: {torch.sum(maybe_cuda(torch.tensor(decoded_result)) == target)}")
+            # print(f"Training accuracy of sample: {sample_correct * 100 / sample_denominator:.2f}% ({sample_correct} / {sample_denominator})")
             # assert output[i, 0] not in [model.symbol_mapping[c] for c in [".", ")"]], f"Input term {output[i]} doesn't make any sense!"
+        #print(f"Accuracy: {accuracy_sum} / {accuracy_denominator}")
 
     return loss / target_length, accuracy_sum / accuracy_denominator
 
