@@ -125,7 +125,7 @@ class CoqTermRNNVectorizer:
               batch_size: int, print_every: int, gamma: float,
               force_max_length: Optional[int] = None, epoch_step: int = 1,
               num_layers: int = 1, momentum: float = 0, teacher_forcing_ratio: float = 0.0,
-              allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
+              allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable[float]:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         token_set: Set[str] = set()
@@ -156,7 +156,7 @@ class CoqTermRNNVectorizer:
                            batch_size: int, print_every: int, gamma: float,
                            force_max_length: Optional[int] = None, epoch_step: int = 1,
                            num_layers: int = 1, momentum: float = 0, teacher_forcing_ratio: float = 0.0,
-                           allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable['CoqRNNVectorizer']:
+                           allow_non_cuda: bool = False, verbosity: int = 0) -> Iterable[float]:
         assert use_cuda or allow_non_cuda, "Cannot train on non-cuda device unless passed allow_non_cuda"
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.max_term_length = term_tensor.size(1)
