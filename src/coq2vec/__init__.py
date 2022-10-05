@@ -252,8 +252,8 @@ class CoqTermRNNVectorizer:
         pass
     def term_to_seq(self, term_text: str) -> List[int]:
         return normalize_sentence_length([self.symbol_mapping[symb]
-                                          for symb in get_symbols(term_text)[:self.max_term_length-1]
-                                          if symb in self.symbol_mapping] + [EOS_token],
+                                          for symb in get_symbols(term_text)
+                                          if symb in self.symbol_mapping][:self.max_term_length-1] + [EOS_token],
                                          self.max_term_length,
                                          PAD_token)
     def term_seq_length(self, term_text: str) -> int:
