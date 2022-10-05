@@ -450,7 +450,7 @@ def tune_termrnn_hyperparameters(terms: List[str], n_epochs: int,
 
 symbols_regexp = (r',|(?::>)|(?::(?!=))|(?::=)|\)|\(|;|@\{|~|\+{1,2}|\*{1,2}|&&|\|\||'
                   r'(?<!\\)/(?!\\)|/\\|\\/|(?<![<*+-/|&])=(?!>)|%|(?<!<)-(?!>)|'
-                  r'<-|->|<=|>=|<>|\^|\[|\]|(?<!\|)\}|\{(?!\|)')
+                  r'<-|->|<=|>=|<>|\^|\[|\]|(?<!\|)\}|\{(?!\|)|\.(?=$|\s+)')
 def get_symbols(string: str) -> List[str]:
     return [word for word in re.sub(
         r'(' + symbols_regexp + ')',
