@@ -276,7 +276,7 @@ class CoqTermRNNVectorizer:
     def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
-        input_length = len(term_seq)
+        input_length = len([t for t in term_seq if t != PAD_token])
         term_tensor = pack_padded_sequence(maybe_cuda(torch.LongTensor([term_seq])),
                                            torch.LongTensor([input_length]), batch_first=True)
         with torch.no_grad():
