@@ -32,12 +32,6 @@ class Obligation(NamedTuple):
     hypotheses: List[str]
     goal: str
 
-class ProofContext(NamedTuple):
-    fg_goals: List[Obligation]
-    bg_goals: List[Obligation]
-    shelved_goals: List[Obligation]
-    given_up_goals: List[Obligation]
-
 class DummyFile:
     def write(self, x): pass
     def flush(self): pass
@@ -62,34 +56,22 @@ EOS_token = 1
 SOS_token = 0
 
 class CoqContextVectorizer:
-    term_vectorizer: Optional['CoqTermRNNVectorizer']
-    hypotheses_encoder: Optional['EncoderRNN']
-    hypotheses_decoder: Optional['DecoderRNN']
-    max_num_hypotheses: Optional[int]
+    term_vectorizer: 'CoqTermRNNVectorizer'
+    max_num_hypotheses: int
 
-    def __init__(self) -> None:
-        self.term_encoder = None
-        self.hypotheses_encoder = None
-        self.hypotheses_decoder = None
-        self.max_num_hypotheses = None
-    def load_weights(self, model_path: Union[Path, str]) -> None:
-        if isinstance(model_path, str):
-            model_path = Path(model_path)
-        with model_path.open('rb') as f:
-            self.term_encoder, self.hypotheses_encoder,\
-                self.hypotheses_decoder, self.max_num_hypotheses = torch.load(f)
-    def save_weights(self, model_path: Union[Path, str]):
-        if isinstance(model_path, str):
-            model_path = Path(model_path)
-        with model_path.open('wb') as f:
-            torch.save((self.term_encoder, self.hypotheses_encoder,
-                        self.hypotheses_decoder, self.max_num_hypotheses), f)
-    def train(self, contexts: List[ProofContext],
-              hidden_size: int, learning_rate: float, n_epochs: int,
-              batch_size: int, print_every: int, gamma: float,
-              force_max_length: Optional[int] = None, epoch_step: int = 1,
-              num_layers: int = 1, allow_non_cuda: bool = False) -> None:
-        pass
+    def __init__(self, term_encoder: 'CoqTermRNNVectorizer',
+                 max_num_hypotheses: int) -> None:
+        self.term_encoder = term_encoder
+        self.max_num_hypotheses = max_num_hypotheses
+    def obligation_to_vector(self, ob: Obligation) -> torch.FloatTensor:
+        selected_hyps = ob.hypotheses[:3]
+        selected_hyps += [":"] * (3 - len(selected_hyps))
+        encoded_goal: torch.Tensor = self.term_encoder.term_to_vector(ob.goal)
+        encoded_hyps: List[torch.Tensor] = \
+          [self.term_encoder.term_to_vector(get_hyp_type(hyp))
+           for hyp in selected_hyps]
+        return cast(torch.FloatTensor, torch.cat([encoded_goal] + encoded_hyps, dim=0))
+
 
 class CoqTermRNNVectorizer:
     symbol_mapping: Optional[Dict[str, int]]
@@ -492,3 +474,12 @@ def asMinutes(s : float) -> str:
     m = int(s / 60)
     s -= m * 60
     return "{:3}m {:5.2f}s".format(m, s)
+
+hypcolon_regex = re.compile(":(?!=)")
+
+def get_hyp_type(hyp: str) -> str:
+    splits = hypcolon_regex.split(hyp, maxsplit=1)
+    if len(splits) == 1:
+        return ""
+    else:
+        return splits[1].strip()
