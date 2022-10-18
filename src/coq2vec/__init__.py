@@ -20,6 +20,7 @@ import torch.optim.lr_scheduler as scheduler
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
+import torch.jit
 
 from tqdm import tqdm
 import numpy as np
@@ -164,9 +165,9 @@ class CoqTermRNNVectorizer:
                                        batch_size=batch_size, num_workers=0,
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
-        encoder = maybe_cuda(EncoderRNN(len(self.token_vocab)+3, hidden_size, num_layers).to(self.device))
+        encoder = torch.jit.script(maybe_cuda(EncoderRNN(len(self.token_vocab)+3, hidden_size, num_layers).to(self.device)))
         self.model = encoder
-        decoder = maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+3, num_layers).to(self.device))
+        decoder = torch.jit.script(maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+3, num_layers).to(self.device)))
         self._decoder = decoder
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate, momentum=momentum)
@@ -301,17 +302,20 @@ class EncoderRNN(nn.Module):
         self.lstm = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
         self.num_layers = num_layers
 
-    def forward(self, input: torch.LongTensor, hidden: torch.FloatTensor,
+    def forward(self, input: PackedSequence, hidden: torch.FloatTensor,
                 cell: torch.FloatTensor):
         batch_size = input.batch_sizes[0]
         max_input_length = len(input.batch_sizes)
-        embedded = PackedSequence(F.relu(self.embedding(input.data)), input.batch_sizes)
+        embedded = PackedSequence(F.relu(self.embedding(input.data)), input.batch_sizes,
+                                  input.sorted_indices, input.unsorted_indices)
         output, (hidden, cell) = self.lstm(embedded, (hidden,cell))
         return output, hidden, cell
 
+    @torch.jit.export
     def initHidden(self,batch_size: int, device: str):
         return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
 
+    @torch.jit.export
     def initCell(self,batch_size: int, device: str):
         return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
 
@@ -333,9 +337,11 @@ class DecoderRNN(nn.Module):
         token_dist = self.softmax(self.out(output))
         return token_dist, hidden, cell
 
+    @torch.jit.export
     def initHidden(self,batch_size: int, device: str):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
+    @torch.jit.export
     def initCell(self,batch_size: int, device: str):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
@@ -449,10 +455,11 @@ def maybe_cuda(component: T1) -> T1:
 def maybe_cuda(component: T2) -> T2:
     ...
 
-def maybe_cuda(component):
-    if use_cuda:
-        return component.to(device=torch.device(cuda_device))
-    else:
+if use_cuda:
+    def maybe_cuda(component):
+        return component.to(device=torch.device("cuda"))
+else:
+    def maybe_cuda(component):
         return component
 
 def normalize_sentence_length(sentence: List[int], target_length: int, fill_value: int) -> List[int]:
