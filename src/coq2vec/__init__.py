@@ -89,20 +89,35 @@ class CoqTermRNNVectorizer:
         self.max_term_length = None
         self.epochs_trained = 0
         pass
+    def load_state(self, state: Any) -> None:
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.symbol_mapping, self.token_vocab, \
+          model_dict, decoder_dict, \
+          self.max_term_length, self.hidden_size, \
+          self.num_layers, self.epochs_trained = state
+        self.model = torch.jit.script(maybe_cuda(EncoderRNN(len(self.token_vocab)+3, self.hidden_size, self.num_layers).to(self.device)))
+        self.model.load_state_dict(model_dict)
+        self._decoder = torch.jit.script(maybe_cuda(DecoderRNN(self.hidden_size, len(self.token_vocab)+3, self.num_layers).to(self.device)))
+        self._decoder.load_state_dict(decoder_dict)
+
     def load_weights(self, model_path: Union[Path, str]) -> None:
         if isinstance(model_path, str):
             model_path = Path(model_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.symbol_mapping, self.token_vocab, self.model, \
-          self._decoder, self.max_term_length, self.epochs_trained = \
-            torch.load(model_path, map_location=self.device)
+        self.load_state(torch.load(model_path, map_location=self.device))
+
+    def get_state(self) -> Any:
+        return (self.symbol_mapping, self.token_vocab,
+                self.model.state_dict(), self._decoder.state_dict(),
+                self.max_term_length, self.model.hidden_size, self.model.num_layers,
+                self.epochs_trained)
+
     def save_weights(self, model_path: Union[Path, str]):
         if isinstance(model_path, str):
             model_path = Path(model_path)
         with model_path.open('wb') as f:
-            torch.save((self.symbol_mapping, self.token_vocab, self.model,
-                        self._decoder, self.max_term_length, self.epochs_trained), f)
-        pass
+            torch.save(self.get_state(), f)
+
     def train(self, terms: List[str],
               hidden_size: int, learning_rate: float, n_epochs: int,
               batch_size: int, print_every: int, gamma: float,
@@ -144,6 +159,11 @@ class CoqTermRNNVectorizer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.max_term_length = term_tensor.size(1)
 
+        encoder = torch.jit.script(maybe_cuda(EncoderRNN(len(self.token_vocab)+3, hidden_size, num_layers).to(self.device)))
+        self.model = encoder
+        decoder = torch.jit.script(maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+3, num_layers).to(self.device)))
+
+        self._decoder = decoder
         dataset_size = term_tensor.size(0)
         split_ratio = 0.05
         indices = list(range(dataset_size))
@@ -165,10 +185,6 @@ class CoqTermRNNVectorizer:
                                        batch_size=batch_size, num_workers=0,
                                        sampler=train_sampler, pin_memory=True, drop_last=True)
 
-        encoder = torch.jit.script(maybe_cuda(EncoderRNN(len(self.token_vocab)+3, hidden_size, num_layers).to(self.device)))
-        self.model = encoder
-        decoder = torch.jit.script(maybe_cuda(DecoderRNN(hidden_size, len(self.token_vocab)+3, num_layers).to(self.device)))
-        self._decoder = decoder
         optimizer = optim.SGD(itertools.chain(encoder.parameters(), decoder.parameters()),
                               lr=learning_rate, momentum=momentum)
         adjuster = scheduler.StepLR(optimizer, epoch_step,
@@ -187,6 +203,11 @@ class CoqTermRNNVectorizer:
             epoch_loss = 0.
             epoch_tf_ratio = teacher_forcing_ratio * (1 - (epoch / (n_epochs - 1)))
             for batch_num, (term_batch, lengths_batch) in enumerate(data_batches, start=1):
+                if epoch == n_epochs and batch_num == 1:
+                    encoder = jit_trace_encoder(len(self.token_vocab) + 3,
+                                                hidden_size, num_layers,
+                                                term_batch, encoder)
+                    self._model = encoder
                 optimizer.zero_grad()
                 lengths_sorted, sorted_idx = lengths_batch.sort(descending=True)
                 padded_term_batch = pack_padded_sequence(term_batch[sorted_idx], lengths_sorted, batch_first=True)
@@ -399,7 +420,23 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         #print(f"Accuracy: {accuracy_sum} / {accuracy_denominator}")
 
     return loss / target_length, accuracy_sum / accuracy_denominator
-
+def jit_trace_encoder(vocab_size: int, hidden_size: int, num_layers: int, 
+                      term_batch: torch.LongTensor,
+                      scriptedEncoder: torch.jit.ScriptModule) \
+                      -> torch.jit.ScriptModule:
+    batch_size = data.batch_sizes[0]
+    input_length = len(data.batch_sizes)
+    target_length = input_length
+    device = "cuda" if use_cuda else "cpu"
+    hidden = scriptedEncoder.initHidden(batch_size, device)
+    cell = scriptedEncoder.initCell(batch_size, device)
+    return torch.jit.trace_module(EncoderRNN(vocab_size, hidden_size,
+                                             num_layers).to(device),
+                                  {"initHidden": (batch_size, device),
+                                   "initCell": (batch_size, device),
+                                   "forward": (term_batch, hidden, cell)})
+    _, hidden, cell = encoder(data, hidden, cell)
+    pass
 def tune_termrnn_hyperparameters(terms: List[str], n_epochs: int,
                                  batch_size: int, print_every: int,
                                  force_max_length: Optional[int] = None, epoch_step: int = 1,
