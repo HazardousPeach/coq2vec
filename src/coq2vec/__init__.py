@@ -57,7 +57,7 @@ EOS_token = 1
 SOS_token = 0
 
 class CoqContextVectorizer:
-    term_vectorizer: 'CoqTermRNNVectorizer'
+    term_encoder: 'CoqTermRNNVectorizer'
     max_num_hypotheses: int
 
     def __init__(self, term_encoder: 'CoqTermRNNVectorizer',
