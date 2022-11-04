@@ -18,7 +18,7 @@ def display(s: str) -> str:
       # print(f"{s} ====>\n{input_seq} ====>\n{output_seq} ====>\n{output_term}")
       print(f"{s} =====>>>\n{output_term}")
 
-device = "cuda" if torch.cuda.is_available else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 num_samples_testing = 10
 with open("800000-samples-terms.txt", 'r') as f:
     samples = [l.strip().rstrip(".") for l in sorted(list(itertools.islice(f, num_samples_testing)), key=lambda l: min(vectorizer.term_seq_length(l), vectorizer.max_term_length), reverse=True)]
