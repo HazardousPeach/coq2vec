@@ -4,7 +4,6 @@ from typing import (List, TypeVar, Dict, Optional, Union,
 import re
 import sys
 import contextlib
-import pickle
 import itertools
 import time
 import random
@@ -13,8 +12,8 @@ from pathlib import Path
 import torch
 from torch import optim
 from torch import nn
-import torch.nn.modules.loss as loss
-import torch.utils.data as data
+from torch.nn.modules import loss
+from torch.utils import data
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as scheduler
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence
@@ -34,8 +33,11 @@ class Obligation(NamedTuple):
     goal: str
 
 class DummyFile:
-    def write(self, x): pass
-    def flush(self): pass
+    def write(self, x):
+        pass
+
+    def flush(self):
+        pass
 
 @contextlib.contextmanager
 def silent():
@@ -90,6 +92,7 @@ class CoqTermRNNVectorizer:
         self.epochs_trained = 0
         pass
     def load_state(self, state: Any) -> None:
+        assert self.token_vocab
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.symbol_mapping, self.token_vocab, \
           model_dict, decoder_dict, \
@@ -261,8 +264,10 @@ class CoqTermRNNVectorizer:
                                          self.max_term_length,
                                          PAD_token)
     def term_seq_length(self, term_text: str) -> int:
+        assert self.symbol_mapping
         return len([True for symb in get_symbols(term_text) if symb in self.symbol_mapping])
     def seq_to_symbol_list(self, seq: List[int]) -> List[str]:
+        assert self.token_vocab
         output_symbols = []
         for item in seq:
             if item == EOS_token:
@@ -420,7 +425,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
         #print(f"Accuracy: {accuracy_sum} / {accuracy_denominator}")
 
     return loss / target_length, accuracy_sum / accuracy_denominator
-def jit_trace_encoder(vocab_size: int, hidden_size: int, num_layers: int, 
+def jit_trace_encoder(vocab_size: int, hidden_size: int, num_layers: int,
                       term_batch: torch.LongTensor,
                       scriptedEncoder: torch.jit.ScriptModule) \
                       -> torch.jit.ScriptModule:
