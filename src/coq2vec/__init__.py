@@ -83,6 +83,9 @@ class CoqTermRNNVectorizer:
     _decoder: Optional['DecoderRNN']
     max_term_length: Optional[int]
     epochs_trained: int
+    num_layers: int
+    hidden_size: int
+    device: Any
     def __init__(self) -> None:
         self.symbol_mapping = None
         self.token_vocab = None
