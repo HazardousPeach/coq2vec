@@ -94,22 +94,32 @@ class CoqTermRNNVectorizer:
         self.max_term_length = None
         self.epochs_trained = 0
         pass
-    def load_state(self, state: Any) -> None:
-        assert self.token_vocab
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def load_state(self, state: Any, force_no_cuda : bool = False) -> None:
+        self.device = torch.device("cuda" if torch.cuda.is_available()
+                                   and not force_no_cuda else "cpu")
         self.symbol_mapping, self.token_vocab, \
           model_dict, decoder_dict, \
           self.max_term_length, self.hidden_size, \
           self.num_layers, self.epochs_trained = state
-        self.model = torch.jit.script(maybe_cuda(EncoderRNN(len(self.token_vocab)+3, self.hidden_size, self.num_layers).to(self.device)))
+        assert self.token_vocab
+        self.model = torch.jit.script(
+            EncoderRNN(len(self.token_vocab)+3, self.hidden_size,
+                       self.num_layers).to(self.device))
+        assert self.model
         self.model.load_state_dict(model_dict)
-        self._decoder = torch.jit.script(maybe_cuda(DecoderRNN(self.hidden_size, len(self.token_vocab)+3, self.num_layers).to(self.device)))
+        self._decoder = torch.jit.script(
+            DecoderRNN(self.hidden_size, len(self.token_vocab)+3,
+                       self.num_layers).to(self.device))
+        assert self._decoder
         self._decoder.load_state_dict(decoder_dict)
 
-    def load_weights(self, model_path: Union[Path, str]) -> None:
+    def load_weights(self, model_path: Union[Path, str],
+                     force_no_cuda : bool = False) -> None:
         if isinstance(model_path, str):
             model_path = Path(model_path)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda"
+                                   if torch.cuda.is_available() and not force_no_cuda
+                                   else "cpu")
         self.load_state(torch.load(model_path, map_location=self.device))
 
     def get_state(self) -> Any:
@@ -289,12 +299,11 @@ class CoqTermRNNVectorizer:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
         input_length = len([t for t in term_seq if t != PAD_token])
-        term_tensor = pack_padded_sequence(maybe_cuda(torch.LongTensor([term_seq])),
+        term_tensor = pack_padded_sequence(torch.LongTensor([term_seq]).to(self.device),
                                            torch.LongTensor([input_length]), batch_first=True)
         with torch.no_grad():
-            device = "cuda" if use_cuda else "cpu"
-            hidden = self.model.initHidden(1, device)
-            cell = self.model.initCell(1, device)
+            hidden = self.model.initHidden(1, self.device)
+            cell = self.model.initCell(1, self.device)
             _, hidden, cell = self.model(term_tensor, hidden, cell)
         return hidden.squeeze(1).cpu()
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
@@ -306,12 +315,11 @@ class CoqTermRNNVectorizer:
         assert self.max_term_length
         assert self.token_vocab
         assert term_vec.size() == torch.Size([self.model.num_layers, self.model.hidden_size]), f"Wrong dimensions for input {term_vec.size()}"
-        device = "cuda" if use_cuda else "cpu"
-        self._decoder.to(device)
+        self._decoder.to(self.device)
         with torch.no_grad():
-            decoder_hidden = term_vec.unsqueeze(1).to(device)
-            decoder_input = torch.tensor([[SOS_token]], device=device)
-            decoder_cell = self._decoder.initCell(1, device)
+            decoder_hidden = term_vec.unsqueeze(1).to(self.device)
+            decoder_input = torch.tensor([[SOS_token]], device=self.device)
+            decoder_cell = self._decoder.initCell(1, self.device)
             output_seq = []
             for di in range(self.max_term_length):
                 decoder_output, decoder_hidden, decoder_cell = self._decoder(decoder_input, decoder_hidden, decoder_cell)
@@ -342,11 +350,11 @@ class EncoderRNN(nn.Module):
 
     @torch.jit.export
     def initHidden(self,batch_size: int, device: str):
-        return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
     @torch.jit.export
     def initCell(self,batch_size: int, device: str):
-        return maybe_cuda(torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device))
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size: int, output_size: int, num_layers: int = 1) -> None:
