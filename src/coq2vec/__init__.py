@@ -349,11 +349,11 @@ class EncoderRNN(nn.Module):
         return output, hidden, cell
 
     @torch.jit.export
-    def initHidden(self,batch_size: int, device: str):
+    def initHidden(self,batch_size: int, device: torch.device):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
     @torch.jit.export
-    def initCell(self,batch_size: int, device: str):
+    def initCell(self,batch_size: int, device: torch.device):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
 class DecoderRNN(nn.Module):
@@ -375,11 +375,11 @@ class DecoderRNN(nn.Module):
         return token_dist, hidden, cell
 
     @torch.jit.export
-    def initHidden(self,batch_size: int, device: str):
+    def initHidden(self,batch_size: int, device: torch.device):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
     @torch.jit.export
-    def initCell(self,batch_size: int, device: str):
+    def initCell(self,batch_size: int, device: torch.device):
         return torch.zeros(self.num_layers, batch_size, self.hidden_size, device=device)
 
 def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.LongTensor, output: torch.LongTensor, lengths: torch.LongTensor,
@@ -387,7 +387,7 @@ def autoencoderBatchIter(encoder: EncoderRNN, decoder: DecoderRNN, data: torch.L
     batch_size = data.batch_sizes[0]
     input_length = len(data.batch_sizes)
     target_length = input_length
-    device = "cuda" if use_cuda else "cpu"
+    device = torch.device("cuda" if use_cuda else "cpu")
 
     loss: torch.FloatTensor = maybe_cuda(torch.tensor([0.]))
     accuracy_sum = 0.
@@ -443,7 +443,7 @@ def jit_trace_encoder(vocab_size: int, hidden_size: int, num_layers: int,
     batch_size = data.batch_sizes[0]
     input_length = len(data.batch_sizes)
     target_length = input_length
-    device = "cuda" if use_cuda else "cpu"
+    device = torch.device("cuda" if use_cuda else "cpu")
     hidden = scriptedEncoder.initHidden(batch_size, device)
     cell = scriptedEncoder.initCell(batch_size, device)
     return torch.jit.trace_module(EncoderRNN(vocab_size, hidden_size,
