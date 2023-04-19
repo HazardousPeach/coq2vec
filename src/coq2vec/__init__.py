@@ -72,6 +72,18 @@ class CoqContextVectorizer:
         vectors = self.term_encoder.terms_to_vectors(
             [get_hyp_type(hyp) for hyp in selected_hyps] + [ob.goal])
         return vectors
+    def obligations_to_vectors(self, obs: List[Obligation]) -> torch.FloatTensor:
+        selected_hyp_lists = [
+            ob.hypotheses[:self.max_num_hypotheses] +
+            [":"] * max(0, self.max_num_hypotheses - len(ob.hypotheses))
+            for ob in obs]
+        all_term_lists = [[get_hyp_type(hyp)
+                           for hyp in selected_hyps] + [ob.goal]
+                          for selected_hyps, ob in zip(selected_hyp_lists, obs)]
+        all_terms = [term for term_list in all_term_lists for term in term_list]
+        return self.term_encoder.terms_to_vectors(all_terms)\
+                                .view(len(obs), 1 + self.max_num_hypotheses,
+                                      self.term_encoder.hidden_size)
 
 
 class CoqTermRNNVectorizer:
