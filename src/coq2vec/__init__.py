@@ -305,7 +305,8 @@ class CoqTermRNNVectorizer:
         input_lengths = [len([t for t in term_seq if t != PAD_token])
                          for term_seq in term_seqs]
         terms_tensor = pack_padded_sequence(torch.LongTensor(term_seqs).to(self.device),
-                                            torch.LongTensor(input_lengths), batch_first=True)
+                                            torch.LongTensor(input_lengths),
+                                            batch_first=True, enforce_sorted=False)
         with torch.no_grad():
             hidden = self.model.initHidden(len(term_seqs), self.device)
             cell = self.model.initCell(len(term_seqs), self.device)
