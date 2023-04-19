@@ -69,11 +69,9 @@ class CoqContextVectorizer:
     def obligation_to_vector(self, ob: Obligation) -> torch.FloatTensor:
         selected_hyps = ob.hypotheses[:self.max_num_hypotheses]
         selected_hyps += [":"] * (self.max_num_hypotheses - len(selected_hyps))
-        encoded_goal: torch.Tensor = self.term_encoder.term_to_vector(ob.goal)
-        encoded_hyps: List[torch.Tensor] = \
-          [self.term_encoder.term_to_vector(get_hyp_type(hyp))
-           for hyp in selected_hyps]
-        return cast(torch.FloatTensor, torch.cat([encoded_goal] + encoded_hyps, dim=0))
+        vectors = self.term_encoder.terms_to_vectors(
+            [get_hyp_type(hyp) for hyp in selected_hyps] + [ob.goal])
+        return vectors
 
 
 class CoqTermRNNVectorizer:
