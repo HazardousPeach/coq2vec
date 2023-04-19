@@ -309,7 +309,7 @@ class CoqTermRNNVectorizer:
             hidden = self.model.initHidden(len(term_seqs), self.device)
             cell = self.model.initCell(len(term_seqs), self.device)
             _, hidden, cell = self.model(terms_tensor, hidden, cell)
-        return hidden.cpu()
+        return hidden.cpu().squeeze(0)
     def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
         return self.seqs_to_vectors([term_seq])[0]
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
