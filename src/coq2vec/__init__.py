@@ -293,19 +293,26 @@ class CoqTermRNNVectorizer:
     def input_seq_to_term(self, seq: List[int]) -> str:
         return " ".join(self.seq_to_symbol_list(seq))
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
-        return self.seq_to_vector(self.term_to_seq(term_text))
+        seq = self.term_to_seq(term_text)
+        return self.seq_to_vector(seq)
+    def terms_to_vectors(self, term_texts: List[str]) -> torch.FloatTensor:
+        seqs = [self.term_to_seq(term_text) for term_text in term_texts]
+        return self.seqs_to_vectors(seqs)
 
-    def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
+    def seqs_to_vectors(self, term_seqs: List[List[int]]) -> torch.FloatTensor:
         assert self.symbol_mapping, "No loaded weights!"
         assert self.model, "No loaded weights!"
-        input_length = len([t for t in term_seq if t != PAD_token])
-        term_tensor = pack_padded_sequence(torch.LongTensor([term_seq]).to(self.device),
-                                           torch.LongTensor([input_length]), batch_first=True)
+        input_lengths = [len([t for t in term_seq if t != PAD_token])
+                         for term_seq in term_seqs]
+        terms_tensor = pack_padded_sequence(torch.LongTensor(term_seqs).to(self.device),
+                                            torch.LongTensor(input_lengths), batch_first=True)
         with torch.no_grad():
-            hidden = self.model.initHidden(1, self.device)
-            cell = self.model.initCell(1, self.device)
-            _, hidden, cell = self.model(term_tensor, hidden, cell)
-        return hidden.squeeze(1).cpu()
+            hidden = self.model.initHidden(len(term_seqs), self.device)
+            cell = self.model.initCell(len(term_seqs), self.device)
+            _, hidden, cell = self.model(terms_tensor, hidden, cell)
+        return hidden.cpu()
+    def seq_to_vector(self, term_seq: List[int]) -> torch.FloatTensor:
+        return self.seqs_to_vectors([term_seq])[0]
     def vector_to_term(self, term_vec: torch.FloatTensor) -> str:
         return self.output_seq_to_term(self.vector_to_seq(term_vec))
     def vector_to_seq(self, term_vec: torch.FloatTensor) -> List[int]:
