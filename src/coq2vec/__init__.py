@@ -66,6 +66,10 @@ class CoqContextVectorizer:
                  max_num_hypotheses: int) -> None:
         self.term_encoder = term_encoder
         self.max_num_hypotheses = max_num_hypotheses
+    def obligations_to_seqs(self, obs: List[Obligation]) \
+      -> torch.LongTensor:
+        return torch.cat([self.obligation_to_seqs(ob).unsqueeze(0)
+                          for ob in obs], dim=0)
     def obligation_to_seqs(self, ob: Obligation) -> torch.LongTensor:
         selected_hyps = list(ob.hypotheses)[:self.max_num_hypotheses]
         selected_hyps += [":"] * (self.max_num_hypotheses - len(selected_hyps))
@@ -79,6 +83,11 @@ class CoqContextVectorizer:
         batch_size = seqs.size()[0]
         assert seqs.size()[1] == self.max_num_hypotheses + 1
         assert seqs.size()[2] == self.term_encoder.max_term_length
+        return self.term_encoder.seqs_to_vectors(
+          seqs.view(batch_size * (self.max_num_hypotheses + 1),
+                    self.term_encoder.max_term_length))\
+          .view(batch_size, self.max_num_hypotheses + 1,
+                self.term_encoder.hidden_size)
 
     def obligation_to_vector(self, ob: Obligation) -> torch.FloatTensor:
         selected_hyps = list(ob.hypotheses)[:self.max_num_hypotheses]
@@ -320,7 +329,7 @@ class CoqTermRNNVectorizer:
         return " ".join(self.seq_to_symbol_list(seq))
     def term_to_vector(self, term_text: str) -> torch.FloatTensor:
         seq = self.term_to_seq(term_text)
-        return self.seq_to_vector(seq)
+        return self.seq_to_vector(torch.LongTensor(seq))
     def terms_to_vectors(self, term_texts: List[str]) -> torch.FloatTensor:
         seqs = torch.LongTensor([self.term_to_seq(term_text) for term_text in term_texts])
         return self.seqs_to_vectors(seqs)
